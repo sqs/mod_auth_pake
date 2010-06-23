@@ -40,7 +40,7 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
     def http_error_auth_reqed(self, auth_header, host, req, headers):
         # taken from urllib2.py
         authreq = headers.get(auth_header, None)
-        if self.retried > 5:
+        if self.retried >= 2:
             # Don't fail endlessly.
             raise urllib2.HTTPError(req.get_full_url(), 401, "tcpcrypt auth failed",
                                     headers, None)
