@@ -74,16 +74,17 @@
 #include "http_protocol.h"
 #include "apr_uri.h"
 #include "util_md5.h"
-#include "util_mutex.h"
 #include "apr_shm.h"
 #include "apr_rmm.h"
 #include "ap_provider.h"
 
 #include "mod_auth.h"
 
-#if APR_HAVE_UNISTD_H
-#include <unistd.h>
-#endif
+/* Disable shmem until pools/init gets sorted out
+ * remove following two lines when fixed
+ */
+#undef APR_HAS_SHARED_MEMORY
+#define APR_HAS_SHARED_MEMORY 0
 
 /* struct to hold the configuration info */
 
@@ -180,16 +181,15 @@ static unsigned long  *opaque_cntr;
 static apr_time_t     *otn_counter;     /* one-time-nonce counter */
 static apr_global_mutex_t *client_lock = NULL;
 static apr_global_mutex_t *opaque_lock = NULL;
-static const char     *client_mutex_type = "authdigest-client";
-static const char     *opaque_mutex_type = "authdigest-opaque";
-static const char     *client_shm_filename;
+static char           client_lock_name[L_tmpnam];
+static char           opaque_lock_name[L_tmpnam];
 
 #define DEF_SHMEM_SIZE  1000L           /* ~ 12 entries */
 #define DEF_NUM_BUCKETS 15L
 #define HASH_DEPTH      5
 
-static apr_size_t shmem_size  = DEF_SHMEM_SIZE;
-static unsigned long num_buckets = DEF_NUM_BUCKETS;
+static long shmem_size  = DEF_SHMEM_SIZE;
+static long num_buckets = DEF_NUM_BUCKETS;
 
 
 module AP_MODULE_DECLARE_DATA auth_digest_module;
@@ -203,11 +203,6 @@ static apr_status_t cleanup_tables(void *not_used)
     ap_log_error(APLOG_MARK, APLOG_STARTUP, 0, NULL,
                   "Digest: cleaning up shared memory");
     fflush(stderr);
-
-    if (client_rmm) {
-        apr_rmm_destroy(client_rmm);
-        client_rmm = NULL;
-    }
 
     if (client_shm) {
         apr_shm_destroy(client_shm);
@@ -264,56 +259,24 @@ static void log_error_and_cleanup(char *msg, apr_status_t sts, server_rec *s)
 
 #if APR_HAS_SHARED_MEMORY
 
-static int initialize_tables(server_rec *s, apr_pool_t *ctx)
+static void initialize_tables(server_rec *s, apr_pool_t *ctx)
 {
     unsigned long idx;
     apr_status_t   sts;
-    const char *tempdir; 
 
     /* set up client list */
 
-    sts = apr_temp_dir_get(&tempdir, ctx);
-    if (APR_SUCCESS != sts) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, sts, s, 
-                     "Failed to find temporary directory");
-        log_error_and_cleanup("failed to find temp dir", sts, s);
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    /* Create the shared memory segment */
-
-    /* 
-     * Create a unique filename using our pid. This information is 
-     * stashed in the global variable so the children inherit it.
-     */
-    client_shm_filename = apr_psprintf(ctx, "%s/authdigest_shm.%"APR_PID_T_FMT, tempdir, 
-                                       getpid());
-
-    /* Now create that segment */
-    sts = apr_shm_create(&client_shm, shmem_size,
-                        client_shm_filename, ctx);
-    if (APR_SUCCESS != sts) {
-        ap_log_error(APLOG_MARK, APLOG_ERR, sts, s, 
-                     "Failed to create shared memory segment on file %s", 
-                     client_shm_filename);
-        log_error_and_cleanup("failed to initialize shm", sts, s);
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-
-    sts = apr_rmm_init(&client_rmm,
-                       NULL, /* no lock, we'll do the locking ourselves */
-                       apr_shm_baseaddr_get(client_shm),
-                       shmem_size, ctx);
+    sts = apr_shm_create(&client_shm, shmem_size, tmpnam(NULL), ctx);
     if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to initialize rmm", sts, s);
-        return !OK;
+        log_error_and_cleanup("failed to create shared memory segments", sts, s);
+        return;
     }
 
-    client_list = apr_rmm_addr_get(client_rmm, apr_rmm_malloc(client_rmm, sizeof(*client_list) +
-                                                          sizeof(client_entry*)*num_buckets));
+    client_list = apr_rmm_malloc(client_rmm, sizeof(*client_list) +
+                                            sizeof(client_entry*)*num_buckets);
     if (!client_list) {
         log_error_and_cleanup("failed to allocate shared memory", -1, s);
-        return !OK;
+        return;
     }
     client_list->table = (client_entry**) (client_list + 1);
     for (idx = 0; idx < num_buckets; idx++) {
@@ -322,63 +285,54 @@ static int initialize_tables(server_rec *s, apr_pool_t *ctx)
     client_list->tbl_len     = num_buckets;
     client_list->num_entries = 0;
 
-    sts = ap_global_mutex_create(&client_lock, NULL, client_mutex_type, NULL,
-                                 s, ctx, 0);
+    tmpnam(client_lock_name);
+    /* FIXME: get the client_lock_name from a directive so we're portable
+     * to non-process-inheriting operating systems, like Win32. */
+    sts = apr_global_mutex_create(&client_lock, client_lock_name,
+                                  APR_LOCK_DEFAULT, ctx);
     if (sts != APR_SUCCESS) {
         log_error_and_cleanup("failed to create lock (client_lock)", sts, s);
-        return !OK;
+        return;
     }
 
 
     /* setup opaque */
 
-    opaque_cntr = apr_rmm_addr_get(client_rmm, apr_rmm_malloc(client_rmm, sizeof(*opaque_cntr)));
+    opaque_cntr = apr_rmm_malloc(client_rmm, sizeof(*opaque_cntr));
     if (opaque_cntr == NULL) {
         log_error_and_cleanup("failed to allocate shared memory", -1, s);
-        return !OK;
+        return;
     }
     *opaque_cntr = 1UL;
 
-    sts = ap_global_mutex_create(&opaque_lock, NULL, opaque_mutex_type, NULL,
-                                 s, ctx, 0);
+    tmpnam(opaque_lock_name);
+    /* FIXME: get the opaque_lock_name from a directive so we're portable
+     * to non-process-inheriting operating systems, like Win32. */
+    sts = apr_global_mutex_create(&opaque_lock, opaque_lock_name,
+                                  APR_LOCK_DEFAULT, ctx);
     if (sts != APR_SUCCESS) {
         log_error_and_cleanup("failed to create lock (opaque_lock)", sts, s);
-        return !OK;
+        return;
     }
 
 
     /* setup one-time-nonce counter */
 
-    otn_counter = apr_rmm_addr_get(client_rmm, apr_rmm_malloc(client_rmm, sizeof(*otn_counter)));
+    otn_counter = apr_rmm_malloc(client_rmm, sizeof(*otn_counter));
     if (otn_counter == NULL) {
         log_error_and_cleanup("failed to allocate shared memory", -1, s);
-        return !OK;
+        return;
     }
     *otn_counter = 0;
     /* no lock here */
 
 
     /* success */
-    return OK;
+    return;
 }
 
 #endif /* APR_HAS_SHARED_MEMORY */
 
-static int pre_init(apr_pool_t *pconf, apr_pool_t *plog, apr_pool_t *ptemp)
-{
-    apr_status_t rv;
-
-    rv = ap_mutex_register(pconf, client_mutex_type, NULL, APR_LOCK_DEFAULT, 0);
-    if (rv == APR_SUCCESS) {
-        rv = ap_mutex_register(pconf, opaque_mutex_type, NULL, APR_LOCK_DEFAULT,
-                               0);
-    }
-    if (rv != APR_SUCCESS) {
-        return rv;
-    }
-
-    return OK;
-}
 
 static int initialize_module(apr_pool_t *p, apr_pool_t *plog,
                              apr_pool_t *ptemp, server_rec *s)
@@ -410,10 +364,7 @@ static int initialize_module(apr_pool_t *p, apr_pool_t *plog,
      * last child dies. Therefore we can never clean up the old stuff,
      * creating a creeping memory leak.
      */
-    if (initialize_tables(s, p) != OK) {
-        return !OK;
-    }
-    /* Call cleanup_tables on exit or restart */
+    initialize_tables(s, p);
     apr_pool_cleanup_register(p, NULL, cleanup_tables, apr_pool_cleanup_null);
 #endif  /* APR_HAS_SHARED_MEMORY */
     return OK;
@@ -427,26 +378,16 @@ static void initialize_child(apr_pool_t *p, server_rec *s)
         return;
     }
 
-    /* Get access to rmm in child */
-    sts = apr_rmm_attach(&client_rmm,
-                         NULL,
-                         apr_shm_baseaddr_get(client_shm),
-                         p);
-    if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to attach to rmm", sts, s);
-        return;
-    }
-
-    sts = apr_global_mutex_child_init(&client_lock,
-                                      apr_global_mutex_lockfile(client_lock),
-                                      p);
+    /* FIXME: get the client_lock_name from a directive so we're portable
+     * to non-process-inheriting operating systems, like Win32. */
+    sts = apr_global_mutex_child_init(&client_lock, client_lock_name, p);
     if (sts != APR_SUCCESS) {
         log_error_and_cleanup("failed to create lock (client_lock)", sts, s);
         return;
     }
-    sts = apr_global_mutex_child_init(&opaque_lock,
-                                      apr_global_mutex_lockfile(opaque_lock),
-                                      p);
+    /* FIXME: get the opaque_lock_name from a directive so we're portable
+     * to non-process-inheriting operating systems, like Win32. */
+    sts = apr_global_mutex_child_init(&opaque_lock, opaque_lock_name, p);
     if (sts != APR_SUCCESS) {
         log_error_and_cleanup("failed to create lock (opaque_lock)", sts, s);
         return;
@@ -511,8 +452,7 @@ static const char *add_authn_provider(cmd_parms *cmd, void *config,
 
     /* lookup and cache the actual provider now */
     newp->provider = ap_lookup_provider(AUTHN_PROVIDER_GROUP,
-                                        newp->provider_name,
-                                        AUTHN_PROVIDER_VERSION);
+                                        newp->provider_name, "0");
 
     if (newp->provider == NULL) {
        /* by the time they use it, the provider should be loaded and
@@ -561,7 +501,9 @@ static const char *set_qop(cmd_parms *cmd, void *config, const char *op)
     }
 
     if (!strcasecmp(op, "auth-int")) {
-        return "AuthDigestQop auth-int is not implemented";
+        ap_log_error(APLOG_MARK, APLOG_WARNING, 0, cmd->server,
+                     "Digest: WARNING: qop `auth-int' currently only works "
+                     "correctly for responses with no entity");
     }
     else if (strcasecmp(op, "auth")) {
         return apr_pstrcat(cmd->pool, "Unrecognized qop: ", op, NULL);
@@ -605,13 +547,11 @@ static const char *set_nonce_format(cmd_parms *cmd, void *config,
 
 static const char *set_nc_check(cmd_parms *cmd, void *config, int flag)
 {
-#if !APR_HAS_SHARED_MEMORY
-    if (flag) {
-        return "AuthDigestNcCheck: ERROR: nonce-count checking "
+    if (flag && !client_shm)
+        ap_log_error(APLOG_MARK, APLOG_WARNING, 0,
+                     cmd->server, "Digest: WARNING: nonce-count checking "
                      "is not supported on platforms without shared-memory "
-                     "support";
-    }
-#endif
+                     "support - disabling check");
 
     ((digest_config_rec *) config)->check_nc = flag;
     return NULL;
@@ -620,8 +560,13 @@ static const char *set_nc_check(cmd_parms *cmd, void *config, int flag)
 static const char *set_algorithm(cmd_parms *cmd, void *config, const char *alg)
 {
     if (!strcasecmp(alg, "MD5-sess")) {
-        return "AuthDigestAlgorithm: ERROR: algorithm `MD5-sess' "
-                "is not fully implemented";
+        if (!client_shm) {
+            ap_log_error(APLOG_MARK, APLOG_WARNING, 0,
+                         cmd->server, "Digest: WARNING: algorithm `MD5-sess' "
+                         "is not supported on platforms without shared-memory "
+                         "support - reverting to MD5");
+            alg = "MD5";
+        }
     }
     else if (strcasecmp(alg, "MD5")) {
         return apr_pstrcat(cmd->pool, "Invalid algorithm in AuthDigestAlgorithm: ", alg, NULL);
@@ -679,8 +624,8 @@ static const char *set_shmem_size(cmd_parms *cmd, void *config,
         num_buckets = 1;
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-                 "Digest: Set shmem-size: %" APR_SIZE_T_FMT ", num-buckets: %ld", 
-                 shmem_size, num_buckets);
+                 "Digest: Set shmem-size: %ld, num-buckets: %ld", shmem_size,
+                 num_buckets);
 
     return NULL;
 }
@@ -829,7 +774,7 @@ static long gc(void)
             client_list->table[idx] = NULL;
         }
         if (entry) {                    /* remove entry */
-            apr_rmm_free(client_rmm, apr_rmm_offset_get(client_rmm, entry));
+            apr_rmm_free(client_rmm, (apr_rmm_off_t)entry);
             num_removed++;
         }
     }
@@ -865,7 +810,7 @@ static client_entry *add_client(unsigned long key, client_entry *info,
 
     /* try to allocate a new entry */
 
-    entry = apr_rmm_addr_get(client_rmm, apr_rmm_malloc(client_rmm, sizeof(client_entry)));
+    entry = (client_entry *)apr_rmm_malloc(client_rmm, sizeof(client_entry));
     if (!entry) {
         long num_removed = gc();
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
@@ -874,11 +819,8 @@ static client_entry *add_client(unsigned long key, client_entry *info,
                      "%ld", num_removed,
                      client_list->num_created - client_list->num_renewed,
                      client_list->num_removed, client_list->num_renewed);
-        entry = apr_rmm_addr_get(client_rmm, apr_rmm_malloc(client_rmm, sizeof(client_entry)));
+        entry = (client_entry *)apr_rmm_malloc(client_rmm, sizeof(client_entry));
         if (!entry) {
-            ap_log_error(APLOG_MARK, APLOG_ERR, 0, s,
-                         "unable to allocate new auth_digest client");
-            apr_global_mutex_unlock(client_lock);
             return NULL;       /* give up */
         }
     }
@@ -1150,7 +1092,7 @@ static client_entry *gen_client(const request_rec *r)
 
     apr_global_mutex_lock(opaque_lock);
     op = (*opaque_cntr)++;
-    apr_global_mutex_unlock(opaque_lock);
+    apr_global_mutex_lock(opaque_lock);
 
     if (!(entry = add_client(op, &new_entry, r->server))) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -1390,8 +1332,7 @@ static authn_status get_hash(request_rec *r, const char *user,
          */
         if (!current_provider) {
             provider = ap_lookup_provider(AUTHN_PROVIDER_GROUP,
-                                          AUTHN_DEFAULT_PROVIDER,
-                                          AUTHN_PROVIDER_VERSION);
+                                          AUTHN_DEFAULT_PROVIDER, "0");
 
             if (!provider || !provider->get_realm_hash) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -1440,28 +1381,7 @@ static int check_nc(const request_rec *r, const digest_header_rec *resp,
     const char *snc = resp->nonce_count;
     char *endptr;
 
-    if (conf->check_nc && !client_shm) {
-        /* Shouldn't happen, but just in case... */
-        ap_log_rerror(APLOG_MARK, APLOG_WARNING, 0, r,
-                      "Digest: cannot check nonce count without shared memory");
-        return OK;
-    }
-
     if (!conf->check_nc || !client_shm) {
-        return OK;
-    }
-
-    if ((conf->qop_list != NULL)
-        &&(conf->qop_list[0] != NULL)
-        &&!strcasecmp(conf->qop_list[0], "none")) {
-        /* qop is none, client must not send a nonce count */
-        if (snc != NULL) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: invalid nc %s received - no nonce count allowed when qop=none",
-                          snc);
-            return !OK;
-        }
-        /* qop is none, cannot check nonce count */
         return OK;
     }
 
@@ -1930,6 +1850,19 @@ static int authenticate_digest_user(request_rec *r)
  * Authorization-Info header code
  */
 
+#ifdef SEND_DIGEST
+static const char *hdr(const apr_table_t *tbl, const char *name)
+{
+    const char *val = apr_table_get(tbl, name);
+    if (val) {
+        return val;
+    }
+    else {
+        return "";
+    }
+}
+#endif
+
 static int add_auth_info(request_rec *r)
 {
     const digest_config_rec *conf =
@@ -1938,14 +1871,53 @@ static int add_auth_info(request_rec *r)
     digest_header_rec *resp =
                 (digest_header_rec *) ap_get_module_config(r->request_config,
                                                            &auth_digest_module);
-    const char *ai = NULL, *nextnonce = "";
+    const char *ai = NULL, *digest = NULL, *nextnonce = "";
 
     if (resp == NULL || !resp->needed_auth || conf == NULL) {
         return OK;
     }
 
-    /* 2069-style entity-digest is not supported (it's too hard, and
-     * there are no clients which support 2069 but not 2617). */
+
+    /* rfc-2069 digest
+     */
+    if (resp->message_qop == NULL) {
+        /* old client, so calc rfc-2069 digest */
+
+#ifdef SEND_DIGEST
+        /* most of this totally bogus because the handlers don't set the
+         * headers until the final handler phase (I wonder why this phase
+         * is called fixup when there's almost nothing you can fix up...)
+         *
+         * Because it's basically impossible to get this right (e.g. the
+         * Content-length is never set yet when we get here, and we can't
+         * calc the entity hash) it's best to just leave this #def'd out.
+         */
+        char date[APR_RFC822_DATE_LEN];
+        apr_rfc822_date(date, r->request_time);
+        char *entity_info =
+            ap_md5(r->pool,
+                   (unsigned char *) apr_pstrcat(r->pool, resp->raw_request_uri,
+                       ":",
+                       r->content_type ? r->content_type : ap_default_type(r), ":",
+                       hdr(r->headers_out, "Content-Length"), ":",
+                       r->content_encoding ? r->content_encoding : "", ":",
+                       hdr(r->headers_out, "Last-Modified"), ":",
+                       r->no_cache && !apr_table_get(r->headers_out, "Expires") ?
+                            date :
+                            hdr(r->headers_out, "Expires"),
+                       NULL));
+        digest =
+            ap_md5(r->pool,
+                   (unsigned char *)apr_pstrcat(r->pool, conf->ha1, ":",
+                                               resp->nonce, ":",
+                                               r->method, ":",
+                                               date, ":",
+                                               entity_info, ":",
+                                               ap_md5(r->pool, (unsigned char *) ""), /* H(entity) - TBD */
+                                               NULL));
+#endif
+    }
+
 
     /* setup nextnonce
      */
@@ -1974,7 +1946,12 @@ static int add_auth_info(request_rec *r)
     if (conf->qop_list[0] && !strcasecmp(conf->qop_list[0], "none")
         && resp->message_qop == NULL) {
         /* use only RFC-2069 format */
-        ai = nextnonce;
+        if (digest) {
+            ai = apr_pstrcat(r->pool, "digest=\"", digest, "\"", nextnonce,NULL);
+        }
+        else {
+            ai = nextnonce;
+        }
     }
     else {
         const char *resp_dig, *ha1, *a2, *ha2;
@@ -2027,6 +2004,9 @@ static int add_auth_info(request_rec *r)
                          resp->nonce_count ? resp->nonce_count : "",
                          resp->message_qop ? ", qop=" : "",
                          resp->message_qop ? resp->message_qop : "",
+                         digest ? "digest=\"" : "",
+                         digest ? digest : "",
+                         digest ? "\"" : "",
                          NULL);
     }
 
@@ -2041,22 +2021,21 @@ static int add_auth_info(request_rec *r)
     return OK;
 }
 
+
 static void register_hooks(apr_pool_t *p)
 {
     static const char * const cfgPost[]={ "http_core.c", NULL };
     static const char * const parsePre[]={ "mod_proxy.c", NULL };
 
-    ap_hook_pre_config(pre_init, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_post_config(initialize_module, NULL, cfgPost, APR_HOOK_MIDDLE);
     ap_hook_child_init(initialize_child, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_post_read_request(parse_hdr_and_update_nc, parsePre, NULL, APR_HOOK_MIDDLE);
-    ap_hook_check_authn(authenticate_digest_user, NULL, NULL, APR_HOOK_MIDDLE,
-                        AP_AUTH_INTERNAL_PER_CONF);
+    ap_hook_check_user_id(authenticate_digest_user, NULL, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_fixups(add_auth_info, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
-AP_DECLARE_MODULE(auth_digest) =
+module AP_MODULE_DECLARE_DATA auth_digest_module =
 {
     STANDARD20_MODULE_STUFF,
     create_digest_dir_config,   /* dir config creater */
