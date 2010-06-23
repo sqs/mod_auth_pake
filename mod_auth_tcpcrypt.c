@@ -865,7 +865,7 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
     }
 
     resp->scheme = ap_getword_white(r->pool, &auth_line);
-    if (strcasecmp(resp->scheme, "Digest")) {
+    if (strcasecmp(resp->scheme, "Tcpcrypt")) {
         resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
         return !OK;
     }
@@ -1591,7 +1591,10 @@ static int authenticate_tcpcrypt_user(request_rec *r)
 
     /* do we require Digest auth for this URI? */
 
-    if (!(t = ap_auth_type(r)) || strcasecmp(t, "TcpcryptAuth")) {
+    if (!(t = ap_auth_type(r)) || strcasecmp(t, "Tcpcrypt")) {
+        /* XXX shouldn't print client input to log - remove this once it's fixed */
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: need auth type %s, got %s", "Tcpcrypt", t);
         return DECLINED;
     }
 
@@ -1642,7 +1645,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     }
 
     r->user         = (char *) resp->username;
-    r->ap_auth_type = (char *) "TcpcryptAuth";
+    r->ap_auth_type = (char *) "Tcpcrypt";
 
     /* check the auth attributes */
 
