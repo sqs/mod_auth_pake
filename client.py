@@ -160,10 +160,16 @@ if __name__ == "__main__":
     opener.add_handler(tcpcrypt_auth)
     try:
         res = opener.open(req)
-        print "\n--------------------------------\n\n", res.info()
+        print "\n--------------------------------\n\n"
+        print "\n".join(': '.join(kv) for kv in res.info().items())
         print res.read()
     except urllib2.HTTPError as e:
         print "\n--------------------------------\n\n"
-        print e.code
-        print e.read()
-        print req.unredirected_hdrs
+        print "REQ"
+        print "\n".join(': '.join(kv) for kv in req.unredirected_hdrs.items())
+        print "\nRES (%d: %s)" % (e.code, getattr(e, 'msg', None))
+        if hasattr(e, 'read'):
+            print e.read()
+        if hasattr(e, 'hdrs'):
+            print e.hdrs
+
