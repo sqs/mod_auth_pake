@@ -58,7 +58,7 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
         chal = urllib2.parse_keqv_list(urllib2.parse_http_list(challenge))
         auth = self.get_authorization(req, chal)
         if auth:
-            auth_val = 'Digest %s' % auth
+            auth_val = 'Tcpcrypt %s' % auth
             self.logger.debug("retry_http_digest_auth: made auth header: %s" \
                               % auth_val)
 
