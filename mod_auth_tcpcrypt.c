@@ -50,7 +50,7 @@
  *       (expected < received) ? set expected = received : issue error
  *       The only problem is that it allows replay attacks when somebody
  *       captures a packet sent to one server and sends it to another
- *       one. Should we add "AuthDigestNcCheck Strict"?
+ *       one. Should we add "TcpcryptAuthNcCheck Strict"?
  *   - expired nonces give amaya fits.
  */
 
@@ -88,7 +88,7 @@
 
 /* struct to hold the configuration info */
 
-typedef struct digest_config_struct {
+typedef struct auth_tcpcrypt_config_struct {
     const char  *dir_name;
     authn_provider_list *providers;
     const char  *realm;
@@ -100,7 +100,7 @@ typedef struct digest_config_struct {
     const char  *algorithm;
     char        *uri_list;
     const char  *ha1;
-} digest_config_rec;
+} auth_tcpcrypt_config_rec;
 
 
 #define DFLT_ALGORITHM  "MD5"
@@ -138,9 +138,9 @@ static struct hash_table {
 
 /* struct to hold a parsed Authorization header */
 
-enum hdr_sts { NO_HEADER, NOT_DIGEST, INVALID, VALID };
+enum hdr_sts { NO_HEADER, NOT_TCPCRYPT_AUTH, INVALID, VALID };
 
-typedef struct digest_header_struct {
+typedef struct auth_tcpcrypt_header_struct {
     const char           *scheme;
     const char           *realm;
     const char           *username;
@@ -161,7 +161,7 @@ typedef struct digest_header_struct {
     apr_uri_t            *psd_request_uri;
     int                   needed_auth;
     client_entry         *client;
-} digest_header_rec;
+} auth_tcpcrypt_header_rec;
 
 
 /* (mostly) nonce stuff */
@@ -192,7 +192,7 @@ static long shmem_size  = DEF_SHMEM_SIZE;
 static long num_buckets = DEF_NUM_BUCKETS;
 
 
-module AP_MODULE_DECLARE_DATA auth_digest_module;
+module AP_MODULE_DECLARE_DATA auth_tcpcrypt_module;
 
 /*
  * initialization code
@@ -201,7 +201,7 @@ module AP_MODULE_DECLARE_DATA auth_digest_module;
 static apr_status_t cleanup_tables(void *not_used)
 {
     ap_log_error(APLOG_MARK, APLOG_STARTUP, 0, NULL,
-                  "Digest: cleaning up shared memory");
+                  "auth_tcpcrypt: cleaning up shared memory");
     fflush(stderr);
 
     if (client_shm) {
@@ -227,7 +227,7 @@ static apr_status_t initialize_secret(server_rec *s)
     apr_status_t status;
 
     ap_log_error(APLOG_MARK, APLOG_NOTICE, 0, s,
-                 "Digest: generating secret for digest authentication ...");
+                 "auth_tcpcrypt: generating secret for tcpcrypt authentication ...");
 
 #if APR_HAS_RANDOM
     status = apr_generate_random_bytes(secret, sizeof(secret));
@@ -238,12 +238,12 @@ static apr_status_t initialize_secret(server_rec *s)
     if (status != APR_SUCCESS) {
         char buf[120];
         ap_log_error(APLOG_MARK, APLOG_CRIT, status, s,
-                     "Digest: error generating secret: %s",
+                     "auth_tcpcrypt: error generating secret: %s",
                      apr_strerror(status, buf, sizeof(buf)));
         return status;
     }
 
-    ap_log_error(APLOG_MARK, APLOG_NOTICE, 0, s, "Digest: done");
+    ap_log_error(APLOG_MARK, APLOG_NOTICE, 0, s, "auth_tcpcrypt: done");
 
     return APR_SUCCESS;
 }
@@ -251,7 +251,7 @@ static apr_status_t initialize_secret(server_rec *s)
 static void log_error_and_cleanup(char *msg, apr_status_t sts, server_rec *s)
 {
     ap_log_error(APLOG_MARK, APLOG_ERR, sts, s,
-                 "Digest: %s - all nonce-count checking, one-time nonces, and "
+                 "auth_tcpcrypt: %s - all nonce-count checking, one-time nonces, and "
                  "MD5-sess algorithm disabled", msg);
 
     cleanup_tables(NULL);
@@ -398,15 +398,15 @@ static void initialize_child(apr_pool_t *p, server_rec *s)
  * configuration code
  */
 
-static void *create_digest_dir_config(apr_pool_t *p, char *dir)
+static void *create_auth_tcpcrypt_dir_config(apr_pool_t *p, char *dir)
 {
-    digest_config_rec *conf;
+    auth_tcpcrypt_config_rec *conf;
 
     if (dir == NULL) {
         return NULL;
     }
 
-    conf = (digest_config_rec *) apr_pcalloc(p, sizeof(digest_config_rec));
+    conf = (auth_tcpcrypt_config_rec *) apr_pcalloc(p, sizeof(auth_tcpcrypt_config_rec));
     if (conf) {
         conf->qop_list       = apr_palloc(p, sizeof(char*));
         conf->qop_list[0]    = NULL;
@@ -420,7 +420,7 @@ static void *create_digest_dir_config(apr_pool_t *p, char *dir)
 
 static const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
 {
-    digest_config_rec *conf = (digest_config_rec *) config;
+    auth_tcpcrypt_config_rec *conf = (auth_tcpcrypt_config_rec *) config;
 
     /* The core already handles the realm, but it's just too convenient to
      * grab it ourselves too and cache some setups. However, we need to
@@ -444,7 +444,7 @@ static const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
 static const char *add_authn_provider(cmd_parms *cmd, void *config,
                                       const char *arg)
 {
-    digest_config_rec *conf = (digest_config_rec*)config;
+    auth_tcpcrypt_config_rec *conf = (auth_tcpcrypt_config_rec*)config;
     authn_provider_list *newp;
 
     newp = apr_pcalloc(cmd->pool, sizeof(authn_provider_list));
@@ -466,7 +466,7 @@ static const char *add_authn_provider(cmd_parms *cmd, void *config,
         /* if it doesn't provide the appropriate function, reject it */
         return apr_psprintf(cmd->pool,
                             "The '%s' Authn provider doesn't support "
-                            "Digest Authentication", newp->provider_name);
+                            "tcpcrypt Authentication", newp->provider_name);
     }
 
     /* Add it to the list now. */
@@ -487,7 +487,7 @@ static const char *add_authn_provider(cmd_parms *cmd, void *config,
 
 static const char *set_qop(cmd_parms *cmd, void *config, const char *op)
 {
-    digest_config_rec *conf = (digest_config_rec *) config;
+    auth_tcpcrypt_config_rec *conf = (auth_tcpcrypt_config_rec *) config;
     char **tmp;
     int cnt;
 
@@ -502,7 +502,7 @@ static const char *set_qop(cmd_parms *cmd, void *config, const char *op)
 
     if (!strcasecmp(op, "auth-int")) {
         ap_log_error(APLOG_MARK, APLOG_WARNING, 0, cmd->server,
-                     "Digest: WARNING: qop `auth-int' currently only works "
+                     "auth_tcpcrypt: WARNING: qop `auth-int' currently only works "
                      "correctly for responses with no entity");
     }
     else if (strcasecmp(op, "auth")) {
@@ -530,30 +530,30 @@ static const char *set_nonce_lifetime(cmd_parms *cmd, void *config,
     lifetime = strtol(t, &endptr, 10);
     if (endptr < (t+strlen(t)) && !apr_isspace(*endptr)) {
         return apr_pstrcat(cmd->pool,
-                           "Invalid time in AuthDigestNonceLifetime: ",
+                           "Invalid time in TcpcryptAuthNonceLifetime: ",
                            t, NULL);
     }
 
-    ((digest_config_rec *) config)->nonce_lifetime = apr_time_from_sec(lifetime);
+    ((auth_tcpcrypt_config_rec *) config)->nonce_lifetime = apr_time_from_sec(lifetime);
     return NULL;
 }
 
 static const char *set_nonce_format(cmd_parms *cmd, void *config,
                                     const char *fmt)
 {
-    ((digest_config_rec *) config)->nonce_format = fmt;
-    return "AuthDigestNonceFormat is not implemented (yet)";
+    ((auth_tcpcrypt_config_rec *) config)->nonce_format = fmt;
+    return "TcpcryptAuthNonceFormat is not implemented (yet)";
 }
 
 static const char *set_nc_check(cmd_parms *cmd, void *config, int flag)
 {
     if (flag && !client_shm)
         ap_log_error(APLOG_MARK, APLOG_WARNING, 0,
-                     cmd->server, "Digest: WARNING: nonce-count checking "
+                     cmd->server, "auth_tcpcrypt: WARNING: nonce-count checking "
                      "is not supported on platforms without shared-memory "
                      "support - disabling check");
 
-    ((digest_config_rec *) config)->check_nc = flag;
+    ((auth_tcpcrypt_config_rec *) config)->check_nc = flag;
     return NULL;
 }
 
@@ -562,23 +562,23 @@ static const char *set_algorithm(cmd_parms *cmd, void *config, const char *alg)
     if (!strcasecmp(alg, "MD5-sess")) {
         if (!client_shm) {
             ap_log_error(APLOG_MARK, APLOG_WARNING, 0,
-                         cmd->server, "Digest: WARNING: algorithm `MD5-sess' "
+                         cmd->server, "auth_tcpcrypt: WARNING: algorithm `MD5-sess' "
                          "is not supported on platforms without shared-memory "
                          "support - reverting to MD5");
             alg = "MD5";
         }
     }
     else if (strcasecmp(alg, "MD5")) {
-        return apr_pstrcat(cmd->pool, "Invalid algorithm in AuthDigestAlgorithm: ", alg, NULL);
+        return apr_pstrcat(cmd->pool, "Invalid algorithm in TcpcryptAuthAlgorithm: ", alg, NULL);
     }
 
-    ((digest_config_rec *) config)->algorithm = alg;
+    ((auth_tcpcrypt_config_rec *) config)->algorithm = alg;
     return NULL;
 }
 
 static const char *set_uri_list(cmd_parms *cmd, void *config, const char *uri)
 {
-    digest_config_rec *c = (digest_config_rec *) config;
+    auth_tcpcrypt_config_rec *c = (auth_tcpcrypt_config_rec *) config;
     if (c->uri_list) {
         c->uri_list[strlen(c->uri_list)-1] = '\0';
         c->uri_list = apr_pstrcat(cmd->pool, c->uri_list, " ", uri, "\"", NULL);
@@ -607,13 +607,13 @@ static const char *set_shmem_size(cmd_parms *cmd, void *config,
         size *= 1048576;
     }
     else {
-        return apr_pstrcat(cmd->pool, "Invalid size in AuthDigestShmemSize: ",
+        return apr_pstrcat(cmd->pool, "Invalid size in TcpcryptAuthShmemSize: ",
                           size_str, NULL);
     }
 
     min = sizeof(*client_list) + sizeof(client_entry*) + sizeof(client_entry);
     if (size < min) {
-        return apr_psprintf(cmd->pool, "size in AuthDigestShmemSize too small: "
+        return apr_psprintf(cmd->pool, "size in TcpcryptAuthShmemSize too small: "
                            "%ld < %ld", size, min);
     }
 
@@ -624,31 +624,31 @@ static const char *set_shmem_size(cmd_parms *cmd, void *config,
         num_buckets = 1;
     }
     ap_log_error(APLOG_MARK, APLOG_DEBUG, 0, cmd->server,
-                 "Digest: Set shmem-size: %ld, num-buckets: %ld", shmem_size,
+                 "auth_tcpcrypt: Set shmem-size: %ld, num-buckets: %ld", shmem_size,
                  num_buckets);
 
     return NULL;
 }
 
-static const command_rec digest_cmds[] =
+static const command_rec auth_tcpcrypt_cmds[] =
 {
     AP_INIT_TAKE1("AuthName", set_realm, NULL, OR_AUTHCFG,
      "The authentication realm (e.g. \"Members Only\")"),
-    AP_INIT_ITERATE("AuthDigestProvider", add_authn_provider, NULL, OR_AUTHCFG,
+    AP_INIT_ITERATE("TcpcryptAuthProvider", add_authn_provider, NULL, OR_AUTHCFG,
                      "specify the auth providers for a directory or location"),
-    AP_INIT_ITERATE("AuthDigestQop", set_qop, NULL, OR_AUTHCFG,
+    AP_INIT_ITERATE("TcpcryptAuthQop", set_qop, NULL, OR_AUTHCFG,
      "A list of quality-of-protection options"),
-    AP_INIT_TAKE1("AuthDigestNonceLifetime", set_nonce_lifetime, NULL, OR_AUTHCFG,
+    AP_INIT_TAKE1("TcpcryptAuthNonceLifetime", set_nonce_lifetime, NULL, OR_AUTHCFG,
      "Maximum lifetime of the server nonce (seconds)"),
-    AP_INIT_TAKE1("AuthDigestNonceFormat", set_nonce_format, NULL, OR_AUTHCFG,
+    AP_INIT_TAKE1("TcpcryptAuthNonceFormat", set_nonce_format, NULL, OR_AUTHCFG,
      "The format to use when generating the server nonce"),
-    AP_INIT_FLAG("AuthDigestNcCheck", set_nc_check, NULL, OR_AUTHCFG,
+    AP_INIT_FLAG("TcpcryptAuthNcCheck", set_nc_check, NULL, OR_AUTHCFG,
      "Whether or not to check the nonce-count sent by the client"),
-    AP_INIT_TAKE1("AuthDigestAlgorithm", set_algorithm, NULL, OR_AUTHCFG,
+    AP_INIT_TAKE1("TcpcryptAuthAlgorithm", set_algorithm, NULL, OR_AUTHCFG,
      "The algorithm used for the hash calculation"),
-    AP_INIT_ITERATE("AuthDigestDomain", set_uri_list, NULL, OR_AUTHCFG,
+    AP_INIT_ITERATE("TcpcryptAuthDomain", set_uri_list, NULL, OR_AUTHCFG,
      "A list of URI's which belong to the same protection space as the current URI"),
-    AP_INIT_TAKE1("AuthDigestShmemSize", set_shmem_size, NULL, RSRC_CONF,
+    AP_INIT_TAKE1("TcpcryptAuthShmemSize", set_shmem_size, NULL, RSRC_CONF,
      "The amount of shared memory to allocate for keeping track of clients"),
     {NULL}
 };
@@ -814,7 +814,7 @@ static client_entry *add_client(unsigned long key, client_entry *info,
     if (!entry) {
         long num_removed = gc();
         ap_log_error(APLOG_MARK, APLOG_INFO, 0, s,
-                     "Digest: gc'd %ld client entries. Total new clients: "
+                     "auth_tcpcrypt: gc'd %ld client entries. Total new clients: "
                      "%ld; Total removed clients: %ld; Total renewed clients: "
                      "%ld", num_removed,
                      client_list->num_created - client_list->num_renewed,
@@ -848,7 +848,7 @@ static client_entry *add_client(unsigned long key, client_entry *info,
  */
 
 /* Parse the Authorization header, if it exists */
-static int get_digest_rec(request_rec *r, digest_header_rec *resp)
+static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
 {
     const char *auth_line;
     apr_size_t l;
@@ -866,7 +866,7 @@ static int get_digest_rec(request_rec *r, digest_header_rec *resp)
 
     resp->scheme = ap_getword_white(r->pool, &auth_line);
     if (strcasecmp(resp->scheme, "Digest")) {
-        resp->auth_hdr_sts = NOT_DIGEST;
+        resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
         return !OK;
     }
 
@@ -980,19 +980,19 @@ static int get_digest_rec(request_rec *r, digest_header_rec *resp)
  */
 static int parse_hdr_and_update_nc(request_rec *r)
 {
-    digest_header_rec *resp;
+    auth_tcpcrypt_header_rec *resp;
     int res;
 
     if (!ap_is_initial_req(r)) {
         return DECLINED;
     }
 
-    resp = apr_pcalloc(r->pool, sizeof(digest_header_rec));
+    resp = apr_pcalloc(r->pool, sizeof(auth_tcpcrypt_header_rec));
     resp->raw_request_uri = r->unparsed_uri;
     resp->psd_request_uri = &r->parsed_uri;
     resp->needed_auth = 0;
     resp->method = r->method;
-    ap_set_module_config(r->request_config, &auth_digest_module, resp);
+    ap_set_module_config(r->request_config, &auth_tcpcrypt_module, resp);
 
     res = get_digest_rec(r, resp);
     resp->client = get_client(resp->opaque_num, r);
@@ -1013,7 +1013,7 @@ static int parse_hdr_and_update_nc(request_rec *r)
  */
 static void gen_nonce_hash(char *hash, const char *timestr, const char *opaque,
                            const server_rec *server,
-                           const digest_config_rec *conf)
+                           const auth_tcpcrypt_config_rec *conf)
 {
     const char *hex = "0123456789abcdef";
     unsigned char sha1[APR_SHA1_DIGESTSIZE];
@@ -1047,7 +1047,7 @@ static void gen_nonce_hash(char *hash, const char *timestr, const char *opaque,
  */
 static const char *gen_nonce(apr_pool_t *p, apr_time_t now, const char *opaque,
                              const server_rec *server,
-                             const digest_config_rec *conf)
+                             const auth_tcpcrypt_config_rec *conf)
 {
     char *nonce = apr_palloc(p, NONCE_LEN+1);
     int len;
@@ -1096,7 +1096,7 @@ static client_entry *gen_client(const request_rec *r)
 
     if (!(entry = add_client(op, &new_entry, r->server))) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: failed to allocate client entry - ignoring "
+                      "auth_tcpcrypt: failed to allocate client entry - ignoring "
                       "client");
         return NULL;
     }
@@ -1139,8 +1139,8 @@ static client_entry *gen_client(const request_rec *r)
  * version of apache.
  */
 static const char *get_userpw_hash(const request_rec *r,
-                                   const digest_header_rec *resp,
-                                   const digest_config_rec *conf)
+                                   const auth_tcpcrypt_header_rec *resp,
+                                   const auth_tcpcrypt_config_rec *conf)
 {
     return ap_md5(r->pool,
              (unsigned char *) apr_pstrcat(r->pool, conf->ha1, ":", resp->nonce,
@@ -1155,8 +1155,8 @@ static const char *get_userpw_hash(const request_rec *r,
  * failure reason will have been logged already).
  */
 static const char *get_session_HA1(const request_rec *r,
-                                   digest_header_rec *resp,
-                                   const digest_config_rec *conf,
+                                   auth_tcpcrypt_header_rec *resp,
+                                   const auth_tcpcrypt_config_rec *conf,
                                    int generate)
 {
     const char *ha1 = NULL;
@@ -1184,7 +1184,7 @@ static const char *get_session_HA1(const request_rec *r,
 }
 
 
-static void clear_session(const digest_header_rec *resp)
+static void clear_session(const auth_tcpcrypt_header_rec *resp)
 {
     if (resp->client) {
         resp->client->ha1[0] = '\0';
@@ -1206,8 +1206,8 @@ static const char *ltox(apr_pool_t *p, unsigned long num)
 }
 
 static void note_digest_auth_failure(request_rec *r,
-                                     const digest_config_rec *conf,
-                                     digest_header_rec *resp, int stale)
+                                     const auth_tcpcrypt_config_rec *conf,
+                                     auth_tcpcrypt_header_rec *resp, int stale)
 {
     const char   *qop, *opaque, *opaque_param, *domain, *nonce;
     int           cnt;
@@ -1317,7 +1317,7 @@ static void note_digest_auth_failure(request_rec *r,
  */
 
 static authn_status get_hash(request_rec *r, const char *user,
-                             digest_config_rec *conf)
+                             auth_tcpcrypt_config_rec *conf)
 {
     authn_status auth_result;
     char *password;
@@ -1374,8 +1374,8 @@ static authn_status get_hash(request_rec *r, const char *user,
     return auth_result;
 }
 
-static int check_nc(const request_rec *r, const digest_header_rec *resp,
-                    const digest_config_rec *conf)
+static int check_nc(const request_rec *r, const auth_tcpcrypt_header_rec *resp,
+                    const auth_tcpcrypt_config_rec *conf)
 {
     unsigned long nc;
     const char *snc = resp->nonce_count;
@@ -1388,7 +1388,7 @@ static int check_nc(const request_rec *r, const digest_header_rec *resp,
     nc = strtol(snc, &endptr, 16);
     if (endptr < (snc+strlen(snc)) && !apr_isspace(*endptr)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: invalid nc %s received - not a number", snc);
+                      "auth_tcpcrypt: invalid nc %s received - not a number", snc);
         return !OK;
     }
 
@@ -1398,7 +1398,7 @@ static int check_nc(const request_rec *r, const digest_header_rec *resp,
 
     if (nc != resp->client->nonce_count) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: Warning, possible replay attack: nonce-count "
+                      "auth_tcpcrypt: Warning, possible replay attack: nonce-count "
                       "check failed: %lu != %lu", nc,
                       resp->client->nonce_count);
         return !OK;
@@ -1407,8 +1407,8 @@ static int check_nc(const request_rec *r, const digest_header_rec *resp,
     return OK;
 }
 
-static int check_nonce(request_rec *r, digest_header_rec *resp,
-                       const digest_config_rec *conf)
+static int check_nonce(request_rec *r, auth_tcpcrypt_header_rec *resp,
+                       const auth_tcpcrypt_config_rec *conf)
 {
     apr_time_t dt;
     int len;
@@ -1417,7 +1417,7 @@ static int check_nonce(request_rec *r, digest_header_rec *resp,
 
     if (strlen(resp->nonce) != NONCE_LEN) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: invalid nonce %s received - length is not %d",
+                      "auth_tcpcrypt: invalid nonce %s received - length is not %d",
                       resp->nonce, NONCE_LEN);
         note_digest_auth_failure(r, conf, resp, 1);
         return HTTP_UNAUTHORIZED;
@@ -1432,7 +1432,7 @@ static int check_nonce(request_rec *r, digest_header_rec *resp,
 
     if (strcmp(hash, resp->nonce+NONCE_TIME_LEN)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: invalid nonce %s received - hash is not %s",
+                      "auth_tcpcrypt: invalid nonce %s received - hash is not %s",
                       resp->nonce, hash);
         note_digest_auth_failure(r, conf, resp, 1);
         return HTTP_UNAUTHORIZED;
@@ -1441,7 +1441,7 @@ static int check_nonce(request_rec *r, digest_header_rec *resp,
     dt = r->request_time - nonce_time.time;
     if (conf->nonce_lifetime > 0 && dt < 0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: invalid nonce %s received - user attempted "
+                      "auth_tcpcrypt: invalid nonce %s received - user attempted "
                       "time travel", resp->nonce);
         note_digest_auth_failure(r, conf, resp, 1);
         return HTTP_UNAUTHORIZED;
@@ -1450,7 +1450,7 @@ static int check_nonce(request_rec *r, digest_header_rec *resp,
     if (conf->nonce_lifetime > 0) {
         if (dt > conf->nonce_lifetime) {
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0,r,
-                          "Digest: user %s: nonce expired (%.2f seconds old "
+                          "auth_tcpcrypt: user %s: nonce expired (%.2f seconds old "
                           "- max lifetime %.2f) - sending new nonce",
                           r->user, (double)apr_time_sec(dt),
                           (double)apr_time_sec(conf->nonce_lifetime));
@@ -1461,7 +1461,7 @@ static int check_nonce(request_rec *r, digest_header_rec *resp,
     else if (conf->nonce_lifetime == 0 && resp->client) {
         if (memcmp(resp->client->last_nonce, resp->nonce, NONCE_LEN)) {
             ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "Digest: user %s: one-time-nonce mismatch - sending "
+                          "auth_tcpcrypt: user %s: one-time-nonce mismatch - sending "
                           "new nonce", r->user);
             note_digest_auth_failure(r, conf, resp, 1);
             return HTTP_UNAUTHORIZED;
@@ -1476,7 +1476,7 @@ static int check_nonce(request_rec *r, digest_header_rec *resp,
 
 /* RFC-2069 */
 static const char *old_digest(const request_rec *r,
-                              const digest_header_rec *resp, const char *ha1)
+                              const auth_tcpcrypt_header_rec *resp, const char *ha1)
 {
     const char *ha2;
 
@@ -1489,8 +1489,8 @@ static const char *old_digest(const request_rec *r,
 
 /* RFC-2617 */
 static const char *new_digest(const request_rec *r,
-                              digest_header_rec *resp,
-                              const digest_config_rec *conf)
+                              auth_tcpcrypt_header_rec *resp,
+                              const auth_tcpcrypt_config_rec *conf)
 {
     const char *ha1, *ha2, *a2;
 
@@ -1580,10 +1580,10 @@ static void copy_uri_components(apr_uri_t *dst,
  * really is that user, if the nonce is correct, etc.
  */
 
-static int authenticate_digest_user(request_rec *r)
+static int authenticate_tcpcrypt_user(request_rec *r)
 {
-    digest_config_rec *conf;
-    digest_header_rec *resp;
+    auth_tcpcrypt_config_rec *conf;
+    auth_tcpcrypt_header_rec *resp;
     request_rec       *mainreq;
     const char        *t;
     int                res;
@@ -1591,13 +1591,13 @@ static int authenticate_digest_user(request_rec *r)
 
     /* do we require Digest auth for this URI? */
 
-    if (!(t = ap_auth_type(r)) || strcasecmp(t, "Digest")) {
+    if (!(t = ap_auth_type(r)) || strcasecmp(t, "TcpcryptAuth")) {
         return DECLINED;
     }
 
     if (!ap_auth_name(r)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: need AuthName: %s", r->uri);
+                      "auth_tcpcrypt: need AuthName: %s", r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -1611,28 +1611,28 @@ static int authenticate_digest_user(request_rec *r)
     while (mainreq->prev != NULL) {
         mainreq = mainreq->prev;
     }
-    resp = (digest_header_rec *) ap_get_module_config(mainreq->request_config,
-                                                      &auth_digest_module);
+    resp = (auth_tcpcrypt_header_rec *) ap_get_module_config(mainreq->request_config,
+                                                      &auth_tcpcrypt_module);
     resp->needed_auth = 1;
 
 
     /* get our conf */
 
-    conf = (digest_config_rec *) ap_get_module_config(r->per_dir_config,
-                                                      &auth_digest_module);
+    conf = (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
+                                                      &auth_tcpcrypt_module);
 
 
     /* check for existence and syntax of Auth header */
 
     if (resp->auth_hdr_sts != VALID) {
-        if (resp->auth_hdr_sts == NOT_DIGEST) {
+        if (resp->auth_hdr_sts == NOT_TCPCRYPT_AUTH) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: client used wrong authentication scheme "
+                          "auth_tcpcrypt: client used wrong authentication scheme "
                           "`%s': %s", resp->scheme, r->uri);
         }
         else if (resp->auth_hdr_sts == INVALID) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: missing user, realm, nonce, uri, digest, "
+                          "auth_tcpcrypt: missing user, realm, nonce, uri, digest, "
                           "cnonce, or nonce_count in authorization header: %s",
                           r->uri);
         }
@@ -1642,7 +1642,7 @@ static int authenticate_digest_user(request_rec *r)
     }
 
     r->user         = (char *) resp->username;
-    r->ap_auth_type = (char *) "Digest";
+    r->ap_auth_type = (char *) "TcpcryptAuth";
 
     /* check the auth attributes */
 
@@ -1655,7 +1655,7 @@ static int authenticate_digest_user(request_rec *r)
         copy_uri_components(&r_uri, resp->psd_request_uri, r);
         if (apr_uri_parse(r->pool, resp->uri, &d_uri) != APR_SUCCESS) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: invalid uri <%s> in Authorization header",
+                          "auth_tcpcrypt: invalid uri <%s> in Authorization header",
                           resp->uri);
             return HTTP_BAD_REQUEST;
         }
@@ -1687,10 +1687,10 @@ static int authenticate_digest_user(request_rec *r)
              */
 
             if (apr_table_get(r->subprocess_env,
-                              "AuthDigestEnableQueryStringHack")) {
+                              "TcpcryptAuthEnableQueryStringHack")) {
 
-                ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "Digest: "
-                              "applying AuthDigestEnableQueryStringHack "
+                ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "auth_tcpcrypt: "
+                              "applying TcpcryptAuthEnableQueryStringHack "
                               "to uri <%s>", resp->raw_request_uri);
 
                d_uri.query = r_uri.query;
@@ -1700,7 +1700,7 @@ static int authenticate_digest_user(request_rec *r)
         if (r->method_number == M_CONNECT) {
             if (!r_uri.hostinfo || strcmp(resp->uri, r_uri.hostinfo)) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "Digest: uri mismatch - <%s> does not match "
+                              "auth_tcpcrypt: uri mismatch - <%s> does not match "
                               "request-uri <%s>", resp->uri, r_uri.hostinfo);
                 return HTTP_BAD_REQUEST;
             }
@@ -1728,7 +1728,7 @@ static int authenticate_digest_user(request_rec *r)
                     || strcmp(d_uri.query, r_uri.query)))
             ) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: uri mismatch - <%s> does not match "
+                          "auth_tcpcrypt: uri mismatch - <%s> does not match "
                           "request-uri <%s>", resp->uri, resp->raw_request_uri);
             return HTTP_BAD_REQUEST;
         }
@@ -1736,7 +1736,7 @@ static int authenticate_digest_user(request_rec *r)
 
     if (resp->opaque && resp->opaque_num == 0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: received invalid opaque - got `%s'",
+                      "auth_tcpcrypt: received invalid opaque - got `%s'",
                       resp->opaque);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
@@ -1744,7 +1744,7 @@ static int authenticate_digest_user(request_rec *r)
 
     if (strcmp(resp->realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: realm mismatch - got `%s' but expected `%s'",
+                      "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
                       resp->realm, conf->realm);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
@@ -1754,7 +1754,7 @@ static int authenticate_digest_user(request_rec *r)
         && strcasecmp(resp->algorithm, "MD5")
         && strcasecmp(resp->algorithm, "MD5-sess")) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: unknown algorithm `%s' received: %s",
+                      "auth_tcpcrypt: unknown algorithm `%s' received: %s",
                       resp->algorithm, r->uri);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
@@ -1764,7 +1764,7 @@ static int authenticate_digest_user(request_rec *r)
 
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: user `%s' in realm `%s' not found: %s",
+                      "auth_tcpcrypt: user `%s' in realm `%s' not found: %s",
                       r->user, conf->realm, r->uri);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
@@ -1775,7 +1775,7 @@ static int authenticate_digest_user(request_rec *r)
     else if (return_code == AUTH_DENIED) {
         /* authentication denied in the provider before attempting a match */
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Digest: user `%s' in realm `%s' denied by provider: %s",
+                      "auth_tcpcrypt: user `%s' in realm `%s' denied by provider: %s",
                       r->user, conf->realm, r->uri);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
@@ -1792,7 +1792,7 @@ static int authenticate_digest_user(request_rec *r)
         /* old (rfc-2069) style digest */
         if (strcmp(resp->digest, old_digest(r, resp, conf->ha1))) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: user %s: password mismatch: %s", r->user,
+                          "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
                           r->uri);
             note_digest_auth_failure(r, conf, resp, 0);
             return HTTP_UNAUTHORIZED;
@@ -1812,7 +1812,7 @@ static int authenticate_digest_user(request_rec *r)
             && !(conf->qop_list[0] == NULL
                  && !strcasecmp(resp->message_qop, "auth"))) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: invalid qop `%s' received: %s",
+                          "auth_tcpcrypt: invalid qop `%s' received: %s",
                           resp->message_qop, r->uri);
             note_digest_auth_failure(r, conf, resp, 0);
             return HTTP_UNAUTHORIZED;
@@ -1825,7 +1825,7 @@ static int authenticate_digest_user(request_rec *r)
         }
         if (strcmp(resp->digest, exp_digest)) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "Digest: user %s: password mismatch: %s", r->user,
+                          "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
                           r->uri);
             note_digest_auth_failure(r, conf, resp, 0);
             return HTTP_UNAUTHORIZED;
@@ -1865,12 +1865,12 @@ static const char *hdr(const apr_table_t *tbl, const char *name)
 
 static int add_auth_info(request_rec *r)
 {
-    const digest_config_rec *conf =
-                (digest_config_rec *) ap_get_module_config(r->per_dir_config,
-                                                           &auth_digest_module);
-    digest_header_rec *resp =
-                (digest_header_rec *) ap_get_module_config(r->request_config,
-                                                           &auth_digest_module);
+    const auth_tcpcrypt_config_rec *conf =
+                (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
+                                                           &auth_tcpcrypt_module);
+    auth_tcpcrypt_header_rec *resp =
+                (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
+                                                           &auth_tcpcrypt_module);
     const char *ai = NULL, *digest = NULL, *nextnonce = "";
 
     if (resp == NULL || !resp->needed_auth || conf == NULL) {
@@ -1962,7 +1962,7 @@ static int add_auth_info(request_rec *r)
             ha1 = get_session_HA1(r, resp, conf, 0);
             if (!ha1) {
                 ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "Digest: internal error: couldn't find session "
+                              "auth_tcpcrypt: internal error: couldn't find session "
                               "info for user %s", resp->username);
                 return !OK;
             }
@@ -2030,19 +2030,19 @@ static void register_hooks(apr_pool_t *p)
     ap_hook_post_config(initialize_module, NULL, cfgPost, APR_HOOK_MIDDLE);
     ap_hook_child_init(initialize_child, NULL, NULL, APR_HOOK_MIDDLE);
     ap_hook_post_read_request(parse_hdr_and_update_nc, parsePre, NULL, APR_HOOK_MIDDLE);
-    ap_hook_check_user_id(authenticate_digest_user, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_check_user_id(authenticate_tcpcrypt_user, NULL, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_fixups(add_auth_info, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
-module AP_MODULE_DECLARE_DATA auth_digest_module =
+module AP_MODULE_DECLARE_DATA auth_tcpcrypt_module =
 {
     STANDARD20_MODULE_STUFF,
-    create_digest_dir_config,   /* dir config creater */
+    create_auth_tcpcrypt_dir_config,   /* dir config creater */
     NULL,                       /* dir merger --- default is to override */
     NULL,                       /* server config */
     NULL,                       /* merge server config */
-    digest_cmds,                /* command table */
+    auth_tcpcrypt_cmds,                /* command table */
     register_hooks              /* register hooks */
 };
 
