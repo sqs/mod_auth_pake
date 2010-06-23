@@ -1302,7 +1302,7 @@ static void note_digest_auth_failure(request_rec *r,
     apr_table_mergen(r->err_headers_out,
                      (PROXYREQ_PROXY == r->proxyreq)
                          ? "Proxy-Authenticate" : "WWW-Authenticate",
-                     apr_psprintf(r->pool, "Digest realm=\"%s\", "
+                     apr_psprintf(r->pool, "Tcpcrypt realm=\"%s\", "
                                   "nonce=\"%s\", algorithm=%s%s%s%s%s",
                                   ap_auth_name(r), nonce, conf->algorithm,
                                   opaque_param ? opaque_param : "",
