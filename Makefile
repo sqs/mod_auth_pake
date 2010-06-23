@@ -9,3 +9,6 @@ clean:
 	rm -f *.o *.so *.slo *.lo *.la
 	rm -rf .libs/
 
+restart:
+	sudo /etc/init.d/apache2 restart
+
