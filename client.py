@@ -1,4 +1,4 @@
-import urllib2, urlparse, logging, hashlib
+import urllib2, urlparse, logging, hashlib, time
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -49,18 +49,28 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
         if authreq:
             scheme = authreq.split()[0]
             self.logger.debug("http_error_auth_reqed: %s" % authreq)
-            if scheme.lower() == 'tcpcryptauth':
+            if scheme.lower() == 'tcpcrypt':
                 return self.retry_http_digest_auth(req, authreq)
 
     def retry_http_digest_auth(self, req, auth):
         # taken from urllib2
         token, challenge = auth.split(' ', 1)
-        chal = parse_keqv_list(parse_http_list(challenge))
+        chal = urllib2.parse_keqv_list(urllib2.parse_http_list(challenge))
         auth = self.get_authorization(req, chal)
         if auth:
             auth_val = 'Digest %s' % auth
+            self.logger.debug("retry_http_digest_auth: made auth header: %s" \
+                              % auth_val)
+
+            # If the last request had the same auth headers, we've already
+            # tried and failed authenticating with these credentials, so don't
+            # resend this auth attempt.
             if req.headers.get(self.auth_header, None) == auth_val:
+                self.logger.debug("retry_http_digest_auth: already " \
+                                  "attempted auth with this header;" \
+                                  " failing")
                 return None
+            
             req.add_unredirected_header(self.auth_header, auth_val)
             resp = self.parent.open(req, timeout=req.timeout)
             return resp
@@ -73,7 +83,7 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
         # authentication, and to provide some message integrity protection.
         # This isn't a fabulous effort, but it's probably Good Enough.
         dig = hashlib.sha1("%s:%s:%s:%s" % (self.nonce_count, nonce, time.ctime(),
-                                            randombytes(8))).hexdigest()
+                                            urllib2.randombytes(8))).hexdigest()
         return dig[:16]
 
     def get_authorization(self, req, chal):
@@ -95,6 +105,7 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
 
         user, pw = self.passwd.find_user_password(realm, req.get_full_url())
         if user is None:
+            self.logger.debug("get_authorization: no user for realm '%s'" % realm)
             return None
 
         A1 = "%s:%s:%s" % (user, realm, pw)
@@ -121,8 +132,6 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
                'response="%s"' % (user, realm, nonce, req.get_selector(), respdig)
         if opaque:
             base += ', opaque="%s"' % opaque
-        if entdig:
-            base += ', digest="%s"' % entdig
         base += ', algorithm="%s"' % algorithm
         if qop:
             base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
@@ -144,11 +153,17 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
 if __name__ == "__main__":
     req = urllib2.Request('http://localhost:8080/protected/')
     opener = urllib2.build_opener()
-    opener.add_handler(TcpcryptAuthHandler())
+    tcpcrypt_auth = TcpcryptAuthHandler()
+    tcpcrypt_auth.add_password('protected area',
+                               'http://localhost:8080/protected/',
+                               'jsmith', 'jsmith')
+    opener.add_handler(tcpcrypt_auth)
     try:
         res = opener.open(req)
-        print res.info()
+        print "\n--------------------------------\n\n", res.info()
+        print res.read()
     except urllib2.HTTPError as e:
+        print "\n--------------------------------\n\n"
         print e.code
         print e.read()
         print req.unredirected_hdrs
