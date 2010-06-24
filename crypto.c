@@ -28,7 +28,7 @@ const char *get_userpw_hash(const request_rec *r,
              (unsigned char *) apr_pstrcat(r->pool,
                                            resp->nonce, ":",
                                            resp->realm, ":",
-                                           "password", ":",
+                                           "jsmith", ":",
                                            ltox(r->pool, tcpcrypt_get_sid()),
                                            NULL));
 }

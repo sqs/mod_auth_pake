@@ -3,6 +3,8 @@ import urllib2, urlparse, logging, hashlib, time
 
 logging.basicConfig(level=logging.DEBUG)
 
+def tcpcrypt_get_sid():
+    return 1122334455
 
 class TcpcryptAuthHandler(urllib2.BaseHandler):
 
@@ -75,27 +77,12 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             resp = self.parent.open(req, timeout=req.timeout)
             return resp
 
-    def get_cnonce(self, nonce):
-        # taken from urllib2
-        # The cnonce-value is an opaque
-        # quoted string value provided by the client and used by both client
-        # and server to avoid chosen plaintext attacks, to provide mutual
-        # authentication, and to provide some message integrity protection.
-        # This isn't a fabulous effort, but it's probably Good Enough.
-        dig = hashlib.sha1("%s:%s:%s:%s" % (self.nonce_count, nonce, time.ctime(),
-                                            urllib2.randombytes(8))).hexdigest()
-        return dig[:16]
-
     def get_authorization(self, req, chal):
         # taken from urllib2
         try:
             realm = chal['realm']
             nonce = chal['nonce']
-            qop = chal.get('qop')
             algorithm = chal.get('algorithm', 'MD5')
-            # mod_digest doesn't send an opaque, even though it isn't
-            # supposed to be optional
-            opaque = chal.get('opaque', None)
         except KeyError:
             return None
 
@@ -108,33 +95,14 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             self.logger.debug("get_authorization: no user for realm '%s'" % realm)
             return None
 
-        A1 = "%s:%s:%s" % (user, realm, pw)
+        A1 = "%s:%s:%s:%lx" % (nonce, realm, pw, tcpcrypt_get_sid())
         A2 = "%s:%s" % (req.get_method(), req.get_selector())
 
-        if qop == 'auth':
-            if nonce == self.last_nonce:
-                self.nonce_count += 1
-            else:
-                self.nonce_count = 1
-                self.last_nonce = nonce
-
-            ncvalue = '%08x' % self.nonce_count
-            cnonce = self.get_cnonce(nonce)
-            noncebit = "%s:%s:%s:%s:%s" % (nonce, ncvalue, cnonce, qop, H(A2))
-            respdig = KD(H(A1), noncebit)
-        elif qop is None:
-            respdig = KD(H(A1), "%s:%s" % (nonce, H(A2)))
-        else:
-            # XXX handle auth-int
-            raise URLError("qop '%s' is not supported." % qop)
+        respdig = H(A1)
 
         base = 'username="%s", realm="%s", nonce="%s", uri="%s", ' \
                'response="%s"' % (user, realm, nonce, req.get_selector(), respdig)
-        if opaque:
-            base += ', opaque="%s"' % opaque
         base += ', algorithm="%s"' % algorithm
-        if qop:
-            base += ', qop=auth, nc=%s, cnonce="%s"' % (ncvalue, cnonce)
         return base
 
     def get_algorithm_impls(self, algorithm):
