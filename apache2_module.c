@@ -39,77 +39,11 @@
  */
 
 #include "apache2_module.h"
-#include "apr_sha1.h"
-#include "apr_base64.h"
-#include "apr_lib.h"
-#include "apr_time.h"
-#include "apr_errno.h"
-#include "apr_global_mutex.h"
-#include "apr_strings.h"
-
-#define APR_WANT_STRFUNC
-#include "apr_want.h"
-
-#include "ap_config.h"
-#include "httpd.h"
-#include "http_config.h"
-#include "http_core.h"
-#include "http_request.h"
-#include "http_log.h"
-#include "http_protocol.h"
-#include "apr_uri.h"
-#include "util_md5.h"
-#include "apr_shm.h"
-#include "apr_rmm.h"
-#include "ap_provider.h"
-
-#include "mod_auth.h"
-
-/* Disable shmem until pools/init gets sorted out
- * remove following two lines when fixed
- */
-#undef APR_HAS_SHARED_MEMORY
-#define APR_HAS_SHARED_MEMORY 0
-
-/* struct to hold the configuration info */
-
-typedef struct auth_tcpcrypt_config_struct {
-    const char  *dir_name;
-    authn_provider_list *providers;
-    const char  *realm;
-    char **qop_list;
-    apr_sha1_ctx_t  nonce_ctx;
-    apr_time_t    nonce_lifetime;
-    const char  *nonce_format;
-    int          check_nc;
-    const char  *algorithm;
-    char        *uri_list;
-    const char  *ha1;
-} auth_tcpcrypt_config_rec;
-
-
-#define DFLT_ALGORITHM  "MD5"
-
-#define DFLT_NONCE_LIFE apr_time_from_sec(300)
-#define NEXTNONCE_DELTA apr_time_from_sec(30)
-
-
-#define NONCE_TIME_LEN  (((sizeof(apr_time_t)+2)/3)*4)
-#define NONCE_HASH_LEN  (2*APR_SHA1_DIGESTSIZE)
-#define NONCE_LEN       (int )(NONCE_TIME_LEN + NONCE_HASH_LEN)
-
-#define SECRET_LEN      20
+#include "crypto.h"
+#include "tcpcrypt_session.h"
 
 
 /* client list definitions */
-
-typedef struct hash_entry {
-    unsigned long      key;                     /* the key for this entry    */
-    struct hash_entry *next;                    /* next entry in the bucket  */
-    unsigned long      nonce_count;             /* for nonce-count checking  */
-    char               ha1[2*APR_MD5_DIGESTSIZE+1]; /* for algorithm=MD5-sess    */
-    char               last_nonce[NONCE_LEN+1]; /* for one-time nonce's      */
-} client_entry;
 
 static struct hash_table {
     client_entry  **table;
@@ -119,35 +53,6 @@ static struct hash_table {
     unsigned long   num_removed;
     unsigned long   num_renewed;
 } *client_list;
-
-
-/* struct to hold a parsed Authorization header */
-
-enum hdr_sts { NO_HEADER, NOT_TCPCRYPT_AUTH, INVALID, VALID };
-
-typedef struct auth_tcpcrypt_header_struct {
-    const char           *scheme;
-    const char           *realm;
-    const char           *username;
-          char           *nonce;
-    const char           *uri;
-    const char           *method;
-    const char           *digest;
-    const char           *algorithm;
-    const char           *cnonce;
-    const char           *opaque;
-    unsigned long         opaque_num;
-    const char           *message_qop;
-    const char           *nonce_count;
-    /* the following fields are not (directly) from the header */
-    apr_time_t            nonce_time;
-    enum hdr_sts          auth_hdr_sts;
-    const char           *raw_request_uri;
-    apr_uri_t            *psd_request_uri;
-    int                   needed_auth;
-    client_entry         *client;
-} auth_tcpcrypt_header_rec;
-
 
 /* (mostly) nonce stuff */
 
@@ -162,12 +67,9 @@ static unsigned char secret[SECRET_LEN];
 
 static apr_shm_t      *client_shm =  NULL;
 static apr_rmm_t      *client_rmm = NULL;
-static unsigned long  *opaque_cntr;
 static apr_time_t     *otn_counter;     /* one-time-nonce counter */
 static apr_global_mutex_t *client_lock = NULL;
-static apr_global_mutex_t *opaque_lock = NULL;
 static char           client_lock_name[L_tmpnam];
-static char           opaque_lock_name[L_tmpnam];
 
 #define DEF_SHMEM_SIZE  1000L           /* ~ 12 entries */
 #define DEF_NUM_BUCKETS 15L
@@ -197,11 +99,6 @@ static apr_status_t cleanup_tables(void *not_used)
     if (client_lock) {
         apr_global_mutex_destroy(client_lock);
         client_lock = NULL;
-    }
-
-    if (opaque_lock) {
-        apr_global_mutex_destroy(opaque_lock);
-        opaque_lock = NULL;
     }
 
     return APR_SUCCESS;
@@ -236,8 +133,8 @@ static apr_status_t initialize_secret(server_rec *s)
 static void log_error_and_cleanup(char *msg, apr_status_t sts, server_rec *s)
 {
     ap_log_error(APLOG_MARK, APLOG_ERR, sts, s,
-                 "auth_tcpcrypt: %s - all nonce-count checking, one-time nonces, and "
-                 "MD5-sess algorithm disabled", msg);
+                 "auth_tcpcrypt: %s - all nonce-count checking and " \
+                 "one-time nonces disabled", msg);
 
     cleanup_tables(NULL);
 }
@@ -279,27 +176,6 @@ static void initialize_tables(server_rec *s, apr_pool_t *ctx)
         log_error_and_cleanup("failed to create lock (client_lock)", sts, s);
         return;
     }
-
-
-    /* setup opaque */
-
-    opaque_cntr = apr_rmm_malloc(client_rmm, sizeof(*opaque_cntr));
-    if (opaque_cntr == NULL) {
-        log_error_and_cleanup("failed to allocate shared memory", -1, s);
-        return;
-    }
-    *opaque_cntr = 1UL;
-
-    tmpnam(opaque_lock_name);
-    /* FIXME: get the opaque_lock_name from a directive so we're portable
-     * to non-process-inheriting operating systems, like Win32. */
-    sts = apr_global_mutex_create(&opaque_lock, opaque_lock_name,
-                                  APR_LOCK_DEFAULT, ctx);
-    if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to create lock (opaque_lock)", sts, s);
-        return;
-    }
-
 
     /* setup one-time-nonce counter */
 
@@ -370,13 +246,6 @@ static void initialize_child(apr_pool_t *p, server_rec *s)
         log_error_and_cleanup("failed to create lock (client_lock)", sts, s);
         return;
     }
-    /* FIXME: get the opaque_lock_name from a directive so we're portable
-     * to non-process-inheriting operating systems, like Win32. */
-    sts = apr_global_mutex_child_init(&opaque_lock, opaque_lock_name, p);
-    if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to create lock (opaque_lock)", sts, s);
-        return;
-    }
 }
 
 /*
@@ -393,8 +262,6 @@ static void *create_auth_tcpcrypt_dir_config(apr_pool_t *p, char *dir)
 
     conf = (auth_tcpcrypt_config_rec *) apr_pcalloc(p, sizeof(auth_tcpcrypt_config_rec));
     if (conf) {
-        conf->qop_list       = apr_palloc(p, sizeof(char*));
-        conf->qop_list[0]    = NULL;
         conf->nonce_lifetime = DFLT_NONCE_LIFE;
         conf->dir_name       = apr_pstrdup(p, dir);
         conf->algorithm      = DFLT_ALGORITHM;
@@ -470,42 +337,6 @@ static const char *add_authn_provider(cmd_parms *cmd, void *config,
     return NULL;
 }
 
-static const char *set_qop(cmd_parms *cmd, void *config, const char *op)
-{
-    auth_tcpcrypt_config_rec *conf = (auth_tcpcrypt_config_rec *) config;
-    char **tmp;
-    int cnt;
-
-    if (!strcasecmp(op, "none")) {
-        if (conf->qop_list[0] == NULL) {
-            conf->qop_list = apr_palloc(cmd->pool, 2 * sizeof(char*));
-            conf->qop_list[1] = NULL;
-        }
-        conf->qop_list[0] = "none";
-        return NULL;
-    }
-
-    if (!strcasecmp(op, "auth-int")) {
-        ap_log_error(APLOG_MARK, APLOG_WARNING, 0, cmd->server,
-                     "auth_tcpcrypt: WARNING: qop `auth-int' currently only works "
-                     "correctly for responses with no entity");
-    }
-    else if (strcasecmp(op, "auth")) {
-        return apr_pstrcat(cmd->pool, "Unrecognized qop: ", op, NULL);
-    }
-
-    for (cnt = 0; conf->qop_list[cnt] != NULL; cnt++)
-        ;
-
-    tmp = apr_palloc(cmd->pool, (cnt + 2) * sizeof(char*));
-    memcpy(tmp, conf->qop_list, cnt*sizeof(char*));
-    tmp[cnt]   = apr_pstrdup(cmd->pool, op);
-    tmp[cnt+1] = NULL;
-    conf->qop_list = tmp;
-
-    return NULL;
-}
-
 static const char *set_nonce_lifetime(cmd_parms *cmd, void *config,
                                       const char *t)
 {
@@ -530,30 +361,9 @@ static const char *set_nonce_format(cmd_parms *cmd, void *config,
     return "TcpcryptAuthNonceFormat is not implemented (yet)";
 }
 
-static const char *set_nc_check(cmd_parms *cmd, void *config, int flag)
-{
-    if (flag && !client_shm)
-        ap_log_error(APLOG_MARK, APLOG_WARNING, 0,
-                     cmd->server, "auth_tcpcrypt: WARNING: nonce-count checking "
-                     "is not supported on platforms without shared-memory "
-                     "support - disabling check");
-
-    ((auth_tcpcrypt_config_rec *) config)->check_nc = flag;
-    return NULL;
-}
-
 static const char *set_algorithm(cmd_parms *cmd, void *config, const char *alg)
 {
-    if (!strcasecmp(alg, "MD5-sess")) {
-        if (!client_shm) {
-            ap_log_error(APLOG_MARK, APLOG_WARNING, 0,
-                         cmd->server, "auth_tcpcrypt: WARNING: algorithm `MD5-sess' "
-                         "is not supported on platforms without shared-memory "
-                         "support - reverting to MD5");
-            alg = "MD5";
-        }
-    }
-    else if (strcasecmp(alg, "MD5")) {
+    if (strcasecmp(alg, "MD5")) {
         return apr_pstrcat(cmd->pool, "Invalid algorithm in TcpcryptAuthAlgorithm: ", alg, NULL);
     }
 
@@ -621,14 +431,10 @@ static const command_rec auth_tcpcrypt_cmds[] =
      "The authentication realm (e.g. \"Members Only\")"),
     AP_INIT_ITERATE("TcpcryptAuthProvider", add_authn_provider, NULL, OR_AUTHCFG,
                      "specify the auth providers for a directory or location"),
-    AP_INIT_ITERATE("TcpcryptAuthQop", set_qop, NULL, OR_AUTHCFG,
-     "A list of quality-of-protection options"),
     AP_INIT_TAKE1("TcpcryptAuthNonceLifetime", set_nonce_lifetime, NULL, OR_AUTHCFG,
      "Maximum lifetime of the server nonce (seconds)"),
     AP_INIT_TAKE1("TcpcryptAuthNonceFormat", set_nonce_format, NULL, OR_AUTHCFG,
      "The format to use when generating the server nonce"),
-    AP_INIT_FLAG("TcpcryptAuthNcCheck", set_nc_check, NULL, OR_AUTHCFG,
-     "Whether or not to check the nonce-count sent by the client"),
     AP_INIT_TAKE1("TcpcryptAuthAlgorithm", set_algorithm, NULL, OR_AUTHCFG,
      "The algorithm used for the hash calculation"),
     AP_INIT_ITERATE("TcpcryptAuthDomain", set_uri_list, NULL, OR_AUTHCFG,
@@ -926,25 +732,12 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
             resp->digest = apr_pstrdup(r->pool, value);
         else if (!strcasecmp(key, "algorithm"))
             resp->algorithm = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "cnonce"))
-            resp->cnonce = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "opaque"))
-            resp->opaque = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "qop"))
-            resp->message_qop = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "nc"))
-            resp->nonce_count = apr_pstrdup(r->pool, value);
     }
 
     if (!resp->username || !resp->realm || !resp->nonce || !resp->uri
-        || !resp->digest
-        || (resp->message_qop && (!resp->cnonce || !resp->nonce_count))) {
+        || !resp->digest) {
         resp->auth_hdr_sts = INVALID;
         return !OK;
-    }
-
-    if (resp->opaque) {
-        resp->opaque_num = (unsigned long) strtol(resp->opaque, NULL, 16);
     }
 
     resp->auth_hdr_sts = VALID;
@@ -952,18 +745,10 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
 }
 
 
-/* Because the browser may preemptively send auth info, incrementing the
- * nonce-count when it does, and because the client does not get notified
- * if the URI didn't need authentication after all, we need to be sure to
- * update the nonce-count each time we receive an Authorization header no
- * matter what the final outcome of the request. Furthermore this is a
- * convenient place to get the request-uri (before any subrequests etc
- * are initiated) and to initialize the request_config.
- *
- * Note that this must be called after mod_proxy had its go so that
- * r->proxyreq is set correctly.
+/* Get the request-uri (before any subrequests etc are initiated) and
+ * initialize the request_config.
  */
-static int parse_hdr_and_update_nc(request_rec *r)
+static int parse_hdr(request_rec *r)
 {
     auth_tcpcrypt_header_rec *resp;
     int res;
@@ -980,10 +765,7 @@ static int parse_hdr_and_update_nc(request_rec *r)
     ap_set_module_config(r->request_config, &auth_tcpcrypt_module, resp);
 
     res = get_digest_rec(r, resp);
-    resp->client = get_client(resp->opaque_num, r);
-    if (res == OK && resp->client) {
-        resp->client->nonce_count++;
-    }
+    //XXX resp->client = get_client(resp->opaque_num, r);
 
     return DECLINED;
 }
@@ -1057,138 +839,9 @@ static const char *gen_nonce(apr_pool_t *p, apr_time_t now, const char *opaque,
     return nonce;
 }
 
-
-/*
- * Opaque and hash-table management
- */
-
-/*
- * Generate a new client entry, add it to the list, and return the
- * entry. Returns NULL if failed.
- */
-static client_entry *gen_client(const request_rec *r)
-{
-    unsigned long op;
-    client_entry new_entry = { 0, NULL, 0, "", "" }, *entry;
-
-    if (!opaque_cntr) {
-        return NULL;
-    }
-
-    apr_global_mutex_lock(opaque_lock);
-    op = (*opaque_cntr)++;
-    apr_global_mutex_lock(opaque_lock);
-
-    if (!(entry = add_client(op, &new_entry, r->server))) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: failed to allocate client entry - ignoring "
-                      "client");
-        return NULL;
-    }
-
-    return entry;
-}
-
-
-/*
- * MD5-sess code.
- *
- * If you want to use algorithm=MD5-sess you must write get_userpw_hash()
- * yourself (see below). The dummy provided here just uses the hash from
- * the auth-file, i.e. it is only useful for testing client implementations
- * of MD5-sess .
- */
-
-/*
- * get_userpw_hash() will be called each time a new session needs to be
- * generated and is expected to return the equivalent of
- *
- * h_urp = ap_md5(r->pool,
- *         apr_pstrcat(r->pool, username, ":", ap_auth_name(r), ":", passwd))
- * ap_md5(r->pool,
- *         (unsigned char *) apr_pstrcat(r->pool, h_urp, ":", resp->nonce, ":",
- *                                      resp->cnonce, NULL));
- *
- * or put differently, it must return
- *
- *   MD5(MD5(username ":" realm ":" password) ":" nonce ":" cnonce)
- *
- * If something goes wrong, the failure must be logged and NULL returned.
- *
- * You must implement this yourself, which will probably consist of code
- * contacting the password server with the necessary information (typically
- * the username, realm, nonce, and cnonce) and receiving the hash from it.
- *
- * TBD: This function should probably be in a seperate source file so that
- * people need not modify mod_auth_digest.c each time they install a new
- * version of apache.
- */
-static const char *get_userpw_hash(const request_rec *r,
-                                   const auth_tcpcrypt_header_rec *resp,
-                                   const auth_tcpcrypt_config_rec *conf)
-{
-    return ap_md5(r->pool,
-             (unsigned char *) apr_pstrcat(r->pool, conf->ha1, ":", resp->nonce,
-                                           ":", resp->cnonce, NULL));
-}
-
-
-/* Retrieve current session H(A1). If there is none and "generate" is
- * true then a new session for MD5-sess is generated and stored in the
- * client struct; if generate is false, or a new session could not be
- * generated then NULL is returned (in case of failure to generate the
- * failure reason will have been logged already).
- */
-static const char *get_session_HA1(const request_rec *r,
-                                   auth_tcpcrypt_header_rec *resp,
-                                   const auth_tcpcrypt_config_rec *conf,
-                                   int generate)
-{
-    const char *ha1 = NULL;
-
-    /* return the current sessions if there is one */
-    if (resp->opaque && resp->client && resp->client->ha1[0]) {
-        return resp->client->ha1;
-    }
-    else if (!generate) {
-        return NULL;
-    }
-
-    /* generate a new session */
-    if (!resp->client) {
-        resp->client = gen_client(r);
-    }
-    if (resp->client) {
-        ha1 = get_userpw_hash(r, resp, conf);
-        if (ha1) {
-            memcpy(resp->client->ha1, ha1, sizeof(resp->client->ha1));
-        }
-    }
-
-    return ha1;
-}
-
-
-static void clear_session(const auth_tcpcrypt_header_rec *resp)
-{
-    if (resp->client) {
-        resp->client->ha1[0] = '\0';
-    }
-}
-
 /*
  * Authorization challenge generation code (for WWW-Authenticate)
  */
-
-static const char *ltox(apr_pool_t *p, unsigned long num)
-{
-    if (num != 0) {
-        return apr_psprintf(p, "%lx", num);
-    }
-    else {
-        return "";
-    }
-}
 
 static void note_digest_auth_failure(request_rec *r,
                                      const auth_tcpcrypt_config_rec *conf,
@@ -1197,74 +850,11 @@ static void note_digest_auth_failure(request_rec *r,
     const char   *qop, *opaque, *opaque_param, *domain, *nonce;
     int           cnt;
 
-    /* Setup qop */
-
-    if (conf->qop_list[0] == NULL) {
-        qop = ", qop=\"auth\"";
-    }
-    else if (!strcasecmp(conf->qop_list[0], "none")) {
-        qop = "";
-    }
-    else {
-        qop = apr_pstrcat(r->pool, ", qop=\"", conf->qop_list[0], NULL);
-        for (cnt = 1; conf->qop_list[cnt] != NULL; cnt++) {
-            qop = apr_pstrcat(r->pool, qop, ",", conf->qop_list[cnt], NULL);
-        }
-        qop = apr_pstrcat(r->pool, qop, "\"", NULL);
-    }
-
-    /* Setup opaque */
-
-    if (resp->opaque == NULL) {
-        /* new client */
-        if ((conf->check_nc || conf->nonce_lifetime == 0
-             || !strcasecmp(conf->algorithm, "MD5-sess"))
-            && (resp->client = gen_client(r)) != NULL) {
-            opaque = ltox(r->pool, resp->client->key);
-        }
-        else {
-            opaque = "";                /* opaque not needed */
-        }
-    }
-    else if (resp->client == NULL) {
-        /* client info was gc'd */
-        resp->client = gen_client(r);
-        if (resp->client != NULL) {
-            opaque = ltox(r->pool, resp->client->key);
-            stale = 1;
-            client_list->num_renewed++;
-        }
-        else {
-            opaque = "";                /* ??? */
-        }
-    }
-    else {
-        opaque = resp->opaque;
-        /* we're generating a new nonce, so reset the nonce-count */
-        resp->client->nonce_count = 0;
-    }
-
-    if (opaque[0]) {
-        opaque_param = apr_pstrcat(r->pool, ", opaque=\"", opaque, "\"", NULL);
-    }
-    else {
-        opaque_param = NULL;
-    }
-
     /* Setup nonce */
 
     nonce = gen_nonce(r->pool, r->request_time, opaque, r->server, conf);
     if (resp->client && conf->nonce_lifetime == 0) {
         memcpy(resp->client->last_nonce, nonce, NONCE_LEN+1);
-    }
-
-    /* Setup MD5-sess stuff. Note that we just clear out the session
-     * info here, since we can't generate a new session until the request
-     * from the client comes in with the cnonce.
-     */
-
-    if (!strcasecmp(conf->algorithm, "MD5-sess")) {
-        clear_session(resp);
     }
 
     /* setup domain attribute. We want to send this attribute wherever
@@ -1274,10 +864,9 @@ static void note_digest_auth_failure(request_rec *r,
 
 
     /* don't send domain
-     * - for proxy requests
-     * - if it's no specified
+     * - if it's not specified
      */
-    if (r->proxyreq || !conf->uri_list) {
+    if (!conf->uri_list) {
         domain = NULL;
     }
     else {
@@ -1285,12 +874,10 @@ static void note_digest_auth_failure(request_rec *r,
     }
 
     apr_table_mergen(r->err_headers_out,
-                     (PROXYREQ_PROXY == r->proxyreq)
-                         ? "Proxy-Authenticate" : "WWW-Authenticate",
+                     "WWW-Authenticate",
                      apr_psprintf(r->pool, "Tcpcrypt realm=\"%s\", "
-                                  "nonce=\"%s\", algorithm=%s%s%s%s%s",
+                                  "nonce=\"%s\", algorithm=%s%s%s%s",
                                   ap_auth_name(r), nonce, conf->algorithm,
-                                  opaque_param ? opaque_param : "",
                                   domain ? domain : "",
                                   stale ? ", stale=true" : "", qop));
 
@@ -1359,154 +946,40 @@ static authn_status get_hash(request_rec *r, const char *user,
     return auth_result;
 }
 
-static int check_nc(const request_rec *r, const auth_tcpcrypt_header_rec *resp,
-                    const auth_tcpcrypt_config_rec *conf)
-{
-    unsigned long nc;
-    const char *snc = resp->nonce_count;
-    char *endptr;
-
-    if (!conf->check_nc || !client_shm) {
-        return OK;
-    }
-
-    nc = strtol(snc, &endptr, 16);
-    if (endptr < (snc+strlen(snc)) && !apr_isspace(*endptr)) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: invalid nc %s received - not a number", snc);
-        return !OK;
-    }
-
-    if (!resp->client) {
-        return !OK;
-    }
-
-    if (nc != resp->client->nonce_count) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: Warning, possible replay attack: nonce-count "
-                      "check failed: %lu != %lu", nc,
-                      resp->client->nonce_count);
-        return !OK;
-    }
-
-    return OK;
-}
-
 static int check_nonce(request_rec *r, auth_tcpcrypt_header_rec *resp,
                        const auth_tcpcrypt_config_rec *conf)
 {
-    apr_time_t dt;
-    int len;
-    time_rec nonce_time;
-    char tmp, hash[NONCE_HASH_LEN+1];
-
-    if (strlen(resp->nonce) != NONCE_LEN) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: invalid nonce %s received - length is not %d",
-                      resp->nonce, NONCE_LEN);
-        note_digest_auth_failure(r, conf, resp, 1);
-        return HTTP_UNAUTHORIZED;
-    }
-
-    tmp = resp->nonce[NONCE_TIME_LEN];
-    resp->nonce[NONCE_TIME_LEN] = '\0';
-    len = apr_base64_decode_binary(nonce_time.arr, resp->nonce);
-    gen_nonce_hash(hash, resp->nonce, resp->opaque, r->server, conf);
-    resp->nonce[NONCE_TIME_LEN] = tmp;
-    resp->nonce_time = nonce_time.time;
-
-    if (strcmp(hash, resp->nonce+NONCE_TIME_LEN)) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: invalid nonce %s received - hash is not %s",
-                      resp->nonce, hash);
-        note_digest_auth_failure(r, conf, resp, 1);
-        return HTTP_UNAUTHORIZED;
-    }
-
-    dt = r->request_time - nonce_time.time;
-    if (conf->nonce_lifetime > 0 && dt < 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: invalid nonce %s received - user attempted "
-                      "time travel", resp->nonce);
-        note_digest_auth_failure(r, conf, resp, 1);
-        return HTTP_UNAUTHORIZED;
-    }
-
-    if (conf->nonce_lifetime > 0) {
-        if (dt > conf->nonce_lifetime) {
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0,r,
-                          "auth_tcpcrypt: user %s: nonce expired (%.2f seconds old "
-                          "- max lifetime %.2f) - sending new nonce",
-                          r->user, (double)apr_time_sec(dt),
-                          (double)apr_time_sec(conf->nonce_lifetime));
-            note_digest_auth_failure(r, conf, resp, 1);
-            return HTTP_UNAUTHORIZED;
-        }
-    }
-    else if (conf->nonce_lifetime == 0 && resp->client) {
-        if (memcmp(resp->client->last_nonce, resp->nonce, NONCE_LEN)) {
-            ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r,
-                          "auth_tcpcrypt: user %s: one-time-nonce mismatch - sending "
-                          "new nonce", r->user);
-            note_digest_auth_failure(r, conf, resp, 1);
-            return HTTP_UNAUTHORIZED;
-        }
-    }
-    /* else (lifetime < 0) => never expires */
-
     return OK;
+    /* apr_time_t dt; */
+    /* int len; */
+    /* time_rec nonce_time; */
+    /* char tmp, hash[NONCE_HASH_LEN+1]; */
+
+    /* if (strlen(resp->nonce) != NONCE_LEN) { */
+    /*     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, */
+    /*                   "auth_tcpcrypt: invalid nonce %s received - length is not %d", */
+    /*                   resp->nonce, NONCE_LEN); */
+    /*     note_digest_auth_failure(r, conf, resp, 1); */
+    /*     return HTTP_UNAUTHORIZED; */
+    /* } */
+
+    /* tmp = resp->nonce[NONCE_TIME_LEN]; */
+    /* resp->nonce[NONCE_TIME_LEN] = '\0'; */
+    /* len = apr_base64_decode_binary(nonce_time.arr, resp->nonce); */
+    /* gen_nonce_hash(hash, resp->nonce, resp->opaque, r->server, conf); */
+    /* resp->nonce[NONCE_TIME_LEN] = tmp; */
+    /* resp->nonce_time = nonce_time.time; */
+
+    /* if (strcmp(hash, resp->nonce+NONCE_TIME_LEN)) { */
+    /*     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, */
+    /*                   "auth_tcpcrypt: invalid nonce %s received - hash is not %s", */
+    /*                   resp->nonce, hash); */
+    /*     note_digest_auth_failure(r, conf, resp, 1); */
+    /*     return HTTP_UNAUTHORIZED; */
+    /* } */
+
+    /* return OK; */
 }
-
-/* The actual MD5 code... whee */
-
-/* RFC-2069 */
-static const char *old_digest(const request_rec *r,
-                              const auth_tcpcrypt_header_rec *resp, const char *ha1)
-{
-    const char *ha2;
-
-    ha2 = ap_md5(r->pool, (unsigned char *)apr_pstrcat(r->pool, resp->method, ":",
-                                                       resp->uri, NULL));
-    return ap_md5(r->pool,
-                  (unsigned char *)apr_pstrcat(r->pool, ha1, ":", resp->nonce,
-                                              ":", ha2, NULL));
-}
-
-/* RFC-2617 */
-static const char *new_digest(const request_rec *r,
-                              auth_tcpcrypt_header_rec *resp,
-                              const auth_tcpcrypt_config_rec *conf)
-{
-    const char *ha1, *ha2, *a2;
-
-    if (resp->algorithm && !strcasecmp(resp->algorithm, "MD5-sess")) {
-        ha1 = get_session_HA1(r, resp, conf, 1);
-        if (!ha1) {
-            return NULL;
-        }
-    }
-    else {
-        ha1 = conf->ha1;
-    }
-
-    if (resp->message_qop && !strcasecmp(resp->message_qop, "auth-int")) {
-        a2 = apr_pstrcat(r->pool, resp->method, ":", resp->uri, ":",
-                         ap_md5(r->pool, (const unsigned char*) ""), NULL);
-                         /* TBD */
-    }
-    else {
-        a2 = apr_pstrcat(r->pool, resp->method, ":", resp->uri, NULL);
-    }
-    ha2 = ap_md5(r->pool, (const unsigned char *)a2);
-
-    return ap_md5(r->pool,
-                  (unsigned char *)apr_pstrcat(r->pool, ha1, ":", resp->nonce,
-                                               ":", resp->nonce_count, ":",
-                                               resp->cnonce, ":",
-                                               resp->message_qop, ":", ha2,
-                                               NULL));
-}
-
 
 static void copy_uri_components(apr_uri_t *dst,
                                 apr_uri_t *src, request_rec *r) {
@@ -1620,8 +1093,8 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         }
         else if (resp->auth_hdr_sts == INVALID) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: missing user, realm, nonce, uri, digest, "
-                          "cnonce, or nonce_count in authorization header: %s",
+                          "auth_tcpcrypt: missing user, realm, nonce, uri, or digest"
+                          " in authorization header: %s",
                           r->uri);
         }
         /* else (resp->auth_hdr_sts == NO_HEADER) */
@@ -1657,32 +1130,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
 
         if (d_uri.query) {
             ap_unescape_url(d_uri.query);
-        }
-        else if (r_uri.query) {
-            /* MSIE compatibility hack.  MSIE has some RFC issues - doesn't
-             * include the query string in the uri Authorization component
-             * or when computing the response component.  the second part
-             * works out ok, since we can hash the header and get the same
-             * result.  however, the uri from the request line won't match
-             * the uri Authorization component since the header lacks the
-             * query string, leaving us incompatable with a (broken) MSIE.
-             *
-             * the workaround is to fake a query string match if in the proper
-             * environment - BrowserMatch MSIE, for example.  the cool thing
-             * is that if MSIE ever fixes itself the simple match ought to
-             * work and this code won't be reached anyway, even if the
-             * environment is set.
-             */
-
-            if (apr_table_get(r->subprocess_env,
-                              "TcpcryptAuthEnableQueryStringHack")) {
-
-                ap_log_rerror(APLOG_MARK, APLOG_INFO, 0, r, "auth_tcpcrypt: "
-                              "applying TcpcryptAuthEnableQueryStringHack "
-                              "to uri <%s>", resp->raw_request_uri);
-
-               d_uri.query = r_uri.query;
-            }
         }
 
         if (r->method_number == M_CONNECT) {
@@ -1722,13 +1169,14 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         }
     }
 
-    if (resp->opaque && resp->opaque_num == 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: received invalid opaque - got `%s'",
-                      resp->opaque);
-        note_digest_auth_failure(r, conf, resp, 0);
-        return HTTP_UNAUTHORIZED;
-    }
+    /* XXX add back */
+    /* if (resp->opaque && resp->opaque_num == 0) { */
+    /*     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, */
+    /*                   "auth_tcpcrypt: received invalid opaque - got `%s'", */
+    /*                   resp->opaque); */
+    /*     note_digest_auth_failure(r, conf, resp, 0); */
+    /*     return HTTP_UNAUTHORIZED; */
+    /*} */
 
     if (strcmp(resp->realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -1739,8 +1187,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     }
 
     if (resp->algorithm != NULL
-        && strcasecmp(resp->algorithm, "MD5")
-        && strcasecmp(resp->algorithm, "MD5-sess")) {
+        && strcasecmp(resp->algorithm, "MD5")) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: unknown algorithm `%s' received: %s",
                       resp->algorithm, r->uri);
@@ -1776,51 +1223,17 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    if (resp->message_qop == NULL) {
-        /* old (rfc-2069) style digest */
-        if (strcmp(resp->digest, old_digest(r, resp, conf->ha1))) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
-                          r->uri);
-            note_digest_auth_failure(r, conf, resp, 0);
-            return HTTP_UNAUTHORIZED;
-        }
+    const char *exp_digest;
+
+    exp_digest = get_userpw_hash(r, resp, conf);
+    if (!exp_digest) {
+        /* we failed to allocate a client struct */
+        return HTTP_INTERNAL_SERVER_ERROR;
     }
-    else {
-        const char *exp_digest;
-        int match = 0, idx;
-        for (idx = 0; conf->qop_list[idx] != NULL; idx++) {
-            if (!strcasecmp(conf->qop_list[idx], resp->message_qop)) {
-                match = 1;
-                break;
-            }
-        }
-
-        if (!match
-            && !(conf->qop_list[0] == NULL
-                 && !strcasecmp(resp->message_qop, "auth"))) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: invalid qop `%s' received: %s",
-                          resp->message_qop, r->uri);
-            note_digest_auth_failure(r, conf, resp, 0);
-            return HTTP_UNAUTHORIZED;
-        }
-
-        exp_digest = new_digest(r, resp, conf);
-        if (!exp_digest) {
-            /* we failed to allocate a client struct */
-            return HTTP_INTERNAL_SERVER_ERROR;
-        }
-        if (strcmp(resp->digest, exp_digest)) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
-                          r->uri);
-            note_digest_auth_failure(r, conf, resp, 0);
-            return HTTP_UNAUTHORIZED;
-        }
-    }
-
-    if (check_nc(r, resp, conf) != OK) {
+    if (strcmp(resp->digest, exp_digest)) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
+                      r->uri);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
@@ -1865,145 +1278,26 @@ static int add_auth_info(request_rec *r)
         return OK;
     }
 
+    const char *resp_dig, *ha1, *a2, *ha2;
 
-    /* rfc-2069 digest
+    ha1 = conf->ha1;
+
+    a2 = apr_pstrcat(r->pool, ":", resp->uri, NULL);
+    ha2 = ap_md5(r->pool, (const unsigned char *)a2);
+
+    resp_dig = ap_md5(r->pool,
+                      (unsigned char *)apr_pstrcat(r->pool, ha1, ":",
+                                                   resp->nonce, ":",
+                                                   ":", ha2, NULL));
+
+    /* assemble Authentication-Info header
      */
-    if (resp->message_qop == NULL) {
-        /* old client, so calc rfc-2069 digest */
-
-#ifdef SEND_DIGEST
-        /* most of this totally bogus because the handlers don't set the
-         * headers until the final handler phase (I wonder why this phase
-         * is called fixup when there's almost nothing you can fix up...)
-         *
-         * Because it's basically impossible to get this right (e.g. the
-         * Content-length is never set yet when we get here, and we can't
-         * calc the entity hash) it's best to just leave this #def'd out.
-         */
-        char date[APR_RFC822_DATE_LEN];
-        apr_rfc822_date(date, r->request_time);
-        char *entity_info =
-            ap_md5(r->pool,
-                   (unsigned char *) apr_pstrcat(r->pool, resp->raw_request_uri,
-                       ":",
-                       r->content_type ? r->content_type : ap_default_type(r), ":",
-                       hdr(r->headers_out, "Content-Length"), ":",
-                       r->content_encoding ? r->content_encoding : "", ":",
-                       hdr(r->headers_out, "Last-Modified"), ":",
-                       r->no_cache && !apr_table_get(r->headers_out, "Expires") ?
-                            date :
-                            hdr(r->headers_out, "Expires"),
-                       NULL));
-        digest =
-            ap_md5(r->pool,
-                   (unsigned char *)apr_pstrcat(r->pool, conf->ha1, ":",
-                                               resp->nonce, ":",
-                                               r->method, ":",
-                                               date, ":",
-                                               entity_info, ":",
-                                               ap_md5(r->pool, (unsigned char *) ""), /* H(entity) - TBD */
-                                               NULL));
-#endif
-    }
-
-
-    /* setup nextnonce
-     */
-    if (conf->nonce_lifetime > 0) {
-        /* send nextnonce if current nonce will expire in less than 30 secs */
-        if ((r->request_time - resp->nonce_time) > (conf->nonce_lifetime-NEXTNONCE_DELTA)) {
-            nextnonce = apr_pstrcat(r->pool, ", nextnonce=\"",
-                                   gen_nonce(r->pool, r->request_time,
-                                             resp->opaque, r->server, conf),
-                                   "\"", NULL);
-            if (resp->client)
-                resp->client->nonce_count = 0;
-        }
-    }
-    else if (conf->nonce_lifetime == 0 && resp->client) {
-        const char *nonce = gen_nonce(r->pool, 0, resp->opaque, r->server,
-                                      conf);
-        nextnonce = apr_pstrcat(r->pool, ", nextnonce=\"", nonce, "\"", NULL);
-        memcpy(resp->client->last_nonce, nonce, NONCE_LEN+1);
-    }
-    /* else nonce never expires, hence no nextnonce */
-
-
-    /* do rfc-2069 digest
-     */
-    if (conf->qop_list[0] && !strcasecmp(conf->qop_list[0], "none")
-        && resp->message_qop == NULL) {
-        /* use only RFC-2069 format */
-        if (digest) {
-            ai = apr_pstrcat(r->pool, "digest=\"", digest, "\"", nextnonce,NULL);
-        }
-        else {
-            ai = nextnonce;
-        }
-    }
-    else {
-        const char *resp_dig, *ha1, *a2, *ha2;
-
-        /* calculate rspauth attribute
-         */
-        if (resp->algorithm && !strcasecmp(resp->algorithm, "MD5-sess")) {
-            ha1 = get_session_HA1(r, resp, conf, 0);
-            if (!ha1) {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "auth_tcpcrypt: internal error: couldn't find session "
-                              "info for user %s", resp->username);
-                return !OK;
-            }
-        }
-        else {
-            ha1 = conf->ha1;
-        }
-
-        if (resp->message_qop && !strcasecmp(resp->message_qop, "auth-int")) {
-            a2 = apr_pstrcat(r->pool, ":", resp->uri, ":",
-                             ap_md5(r->pool,(const unsigned char *) ""), NULL);
-                             /* TBD */
-        }
-        else {
-            a2 = apr_pstrcat(r->pool, ":", resp->uri, NULL);
-        }
-        ha2 = ap_md5(r->pool, (const unsigned char *)a2);
-
-        resp_dig = ap_md5(r->pool,
-                          (unsigned char *)apr_pstrcat(r->pool, ha1, ":",
-                                                       resp->nonce, ":",
-                                                       resp->nonce_count, ":",
-                                                       resp->cnonce, ":",
-                                                       resp->message_qop ?
-                                                         resp->message_qop : "",
-                                                       ":", ha2, NULL));
-
-        /* assemble Authentication-Info header
-         */
-        ai = apr_pstrcat(r->pool,
-                         "rspauth=\"", resp_dig, "\"",
-                         nextnonce,
-                         resp->cnonce ? ", cnonce=\"" : "",
-                         resp->cnonce
-                           ? ap_escape_quotes(r->pool, resp->cnonce)
-                           : "",
-                         resp->cnonce ? "\"" : "",
-                         resp->nonce_count ? ", nc=" : "",
-                         resp->nonce_count ? resp->nonce_count : "",
-                         resp->message_qop ? ", qop=" : "",
-                         resp->message_qop ? resp->message_qop : "",
-                         digest ? "digest=\"" : "",
-                         digest ? digest : "",
-                         digest ? "\"" : "",
-                         NULL);
-    }
+    ai = apr_pstrcat(r->pool,
+                     "rspauth=\"", resp_dig, "\"",
+                     NULL);
 
     if (ai && ai[0]) {
-        apr_table_mergen(r->headers_out,
-                         (PROXYREQ_PROXY == r->proxyreq)
-                             ? "Proxy-Authentication-Info"
-                             : "Authentication-Info",
-                         ai);
+        apr_table_mergen(r->headers_out, "Authentication-Info", ai);
     }
 
     return OK;
@@ -2017,7 +1311,7 @@ static void register_hooks(apr_pool_t *p)
 
     ap_hook_post_config(initialize_module, NULL, cfgPost, APR_HOOK_MIDDLE);
     ap_hook_child_init(initialize_child, NULL, NULL, APR_HOOK_MIDDLE);
-    ap_hook_post_read_request(parse_hdr_and_update_nc, parsePre, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_read_request(parse_hdr, parsePre, NULL, APR_HOOK_MIDDLE);
     ap_hook_check_user_id(authenticate_tcpcrypt_user, NULL, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_fixups(add_auth_info, NULL, NULL, APR_HOOK_MIDDLE);
