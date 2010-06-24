@@ -6,7 +6,7 @@ auth_tcpcrypt.o:
 	apxs2 -I . -cia apache2_module.c apache2_module_init.c crypto.c tcpcrypt_session.c
 
 clean:
-	rm -f *.o *.so *.slo *.lo *.la
+	rm -f *.o *.so *.slo *.lo *.la *.pyc
 	rm -rf .libs/
 
 restart:
