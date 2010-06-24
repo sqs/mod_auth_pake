@@ -16,7 +16,6 @@ class TestModAuthTcpcrypt(unittest.TestCase):
                 print e.read()
             if hasattr(e, 'hdrs'):
                 print e.hdrs
-
     
     def setUp(self):
         self.opener = urllib2.build_opener()
