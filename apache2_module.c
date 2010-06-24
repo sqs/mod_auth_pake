@@ -38,7 +38,7 @@
  *   - expired nonces give amaya fits.
  */
 
-#include "mod_auth_tcpcrypt.h"
+#include "apache2_module.h"
 #include "apr_sha1.h"
 #include "apr_base64.h"
 #include "apr_lib.h"

@@ -3,7 +3,7 @@ default: local
 local: auth_tcpcrypt.o
 
 auth_tcpcrypt.o:
-	apxs2 -cia mod_auth_tcpcrypt.c
+	apxs2 -cia apache2_module.c
 
 clean:
 	rm -f *.o *.so *.slo *.lo *.la
