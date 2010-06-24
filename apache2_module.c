@@ -196,7 +196,7 @@ static int parse_hdr(request_rec *r)
 /* The hash part of the nonce is a SHA-1 hash of the time, realm, server host
  * and port, opaque, and our secret.
  */
-static void gen_nonce_hash(char *hash, const char *timestr, const char *opaque,
+static void gen_nonce_hash(char *hash, const char *timestr,
                            const server_rec *server,
                            const auth_tcpcrypt_config_rec *conf)
 {
@@ -213,10 +213,6 @@ static void gen_nonce_hash(char *hash, const char *timestr, const char *opaque,
                          sizeof(server->port));
      */
     apr_sha1_update_binary(&ctx, (const unsigned char *) timestr, strlen(timestr));
-    if (opaque) {
-        apr_sha1_update_binary(&ctx, (const unsigned char *) opaque,
-                             strlen(opaque));
-    }
     apr_sha1_final(sha1, &ctx);
 
     for (idx=0; idx<APR_SHA1_DIGESTSIZE; idx++) {
@@ -230,7 +226,7 @@ static void gen_nonce_hash(char *hash, const char *timestr, const char *opaque,
 
 /* The nonce has the format b64(time)+hash .
  */
-static const char *gen_nonce(apr_pool_t *p, apr_time_t now, const char *opaque,
+static const char *gen_nonce(apr_pool_t *p, apr_time_t now,
                              const server_rec *server,
                              const auth_tcpcrypt_config_rec *conf)
 {
@@ -252,7 +248,7 @@ static const char *gen_nonce(apr_pool_t *p, apr_time_t now, const char *opaque,
         t.time = 42;
     }
     len = apr_base64_encode_binary(nonce, t.arr, sizeof(t.arr));
-    gen_nonce_hash(nonce+NONCE_TIME_LEN, nonce, opaque, server, conf);
+    gen_nonce_hash(nonce+NONCE_TIME_LEN, nonce, server, conf);
 
     return nonce;
 }
@@ -265,12 +261,12 @@ static void note_digest_auth_failure(request_rec *r,
                                      const auth_tcpcrypt_config_rec *conf,
                                      auth_tcpcrypt_header_rec *resp, int stale)
 {
-    const char   *qop, *opaque, *opaque_param, *domain, *nonce;
+    const char   *domain, *nonce;
     int           cnt;
 
     /* Setup nonce */
 
-    nonce = gen_nonce(r->pool, r->request_time, opaque, r->server, conf);
+    nonce = gen_nonce(r->pool, r->request_time, r->server, conf);
     if (resp->client && conf->nonce_lifetime == 0) {
         memcpy(resp->client->last_nonce, nonce, NONCE_LEN+1);
     }
@@ -294,10 +290,10 @@ static void note_digest_auth_failure(request_rec *r,
     apr_table_mergen(r->err_headers_out,
                      "WWW-Authenticate",
                      apr_psprintf(r->pool, "Tcpcrypt realm=\"%s\", "
-                                  "nonce=\"%s\", algorithm=%s%s%s%s",
+                                  "nonce=\"%s\", algorithm=%s%s%s",
                                   ap_auth_name(r), nonce, conf->algorithm,
                                   domain ? domain : "",
-                                  stale ? ", stale=true" : "", qop));
+                                  stale ? ", stale=true" : ""));
 
 }
 
