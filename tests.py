@@ -1,33 +1,45 @@
 import unittest, urllib2
+from urllib2 import Request
 from http_tcpcrypt_auth import tcpcrypt_get_sid, TcpcryptAuthHandler
 
 
 class TestModAuthTcpcrypt(unittest.TestCase):
 
-    def assertAuthenticates(self, req):
+    def assertResponse(self, req, exp_status=200):
+        expects_error = (exp_status >= 400)
         try:
             res = self.opener.open(req)
+            if expects_error:
+                raise AssertionError("expected response error (%d), got %d" % \
+                                         (exp_status, res.code))
         except urllib2.HTTPError as e:
-            print "\n--------------------------------\n\n"
-            print "REQ"
-            print "\n".join(': '.join(kv) for kv in req.unredirected_hdrs.items())
-            print "\nRES (%d: %s)" % (e.code, getattr(e, 'msg', None))
-            if hasattr(e, 'read'):
-                print e.read()
-            if hasattr(e, 'hdrs'):
-                print e.hdrs
+            if e.code != exp_status:
+                s = []
+                s.append("\n--------------------------------\nREQ\n")
+                s.append("\n".join(': '.join(kv) for kv in req.unredirected_hdrs.items()))
+                s.append("\nRES (%d: %s)" % (e.code, getattr(e, 'msg', None)))
+                if hasattr(e, 'read'):
+                    s.append(e.read())
+                if hasattr(e, 'hdrs'):
+                    s.append(repr(e.hdrs))
+                raise AssertionError("expected response %d, got %d:\n%s" % \
+                                         (exp_status, e.code, "\n".join(s)))
     
     def setUp(self):
         self.opener = urllib2.build_opener()
-        tcpcrypt_auth = TcpcryptAuthHandler()
-        tcpcrypt_auth.add_password('protected area',
-                                   'http://localhost:8080/protected/',
-                                   'jsmith', 'jsmith')
-        self.opener.add_handler(tcpcrypt_auth)
+        self.handler = TcpcryptAuthHandler()
+        self.opener.add_handler(self.handler)
 
     def test_authenticates_once(self):
-        req = urllib2.Request('http://localhost:8080/protected/')
-        self.assertAuthenticates(req)
+        req = Request('http://localhost:8080/protected/')
+        self.handler.add_password('protected area',
+                                  'http://localhost:8080/protected/',
+                                  'jsmith', 'jsmith')
+        self.assertResponse(req, 200)
+
+    def test_fails_authentication(self):
+        req = Request('http://localhost:8080/protected/')
+        self.assertResponse(req, 401)
        
 if __name__ == "__main__":
     unittest.main()
