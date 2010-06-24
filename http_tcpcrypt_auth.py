@@ -34,8 +34,8 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
 
     def http_error_401(self, authreq, fp, code, msg, headers):
         # taken from urllib2.py
-        host = urlparse.urlparse(req.get_full_url())[1]
-        retry = self.http_error_auth_reqed('www-authenticate', host, req, headers)
+        host = urlparse.urlparse(authreq.get_full_url())[1]
+        retry = self.http_error_auth_reqed('www-authenticate', host, authreq, headers)
         self.reset_retry_count()
         return retry
 
@@ -116,28 +116,4 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             H = lambda x: hashlib.sha1(x).hexdigest()
         KD = lambda s, d: H("%s:%s" % (s, d))
         return H, KD
-
-
-if __name__ == "__main__":
-    req = urllib2.Request('http://localhost:8080/protected/')
-    opener = urllib2.build_opener()
-    tcpcrypt_auth = TcpcryptAuthHandler()
-    tcpcrypt_auth.add_password('protected area',
-                               'http://localhost:8080/protected/',
-                               'jsmith', 'jsmith')
-    opener.add_handler(tcpcrypt_auth)
-    try:
-        res = opener.open(req)
-        print "\n--------------------------------\n\n"
-        print "\n".join(': '.join(kv) for kv in res.info().items())
-        print res.read()
-    except urllib2.HTTPError as e:
-        print "\n--------------------------------\n\n"
-        print "REQ"
-        print "\n".join(': '.join(kv) for kv in req.unredirected_hdrs.items())
-        print "\nRES (%d: %s)" % (e.code, getattr(e, 'msg', None))
-        if hasattr(e, 'read'):
-            print e.read()
-        if hasattr(e, 'hdrs'):
-            print e.hdrs
 
