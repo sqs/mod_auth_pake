@@ -3,7 +3,7 @@ from urllib2 import Request
 from http_tcpcrypt_auth import tcpcrypt_get_sid, TcpcryptAuthHandler
 
 
-class TestModAuthTcpcrypt(unittest.TestCase):
+class TestTcpcryptAuthHandler(unittest.TestCase):
 
     def assertResponse(self, req, exp_status=200):
         expects_error = (exp_status >= 400)
