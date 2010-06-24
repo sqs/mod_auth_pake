@@ -67,6 +67,8 @@ __END__
 Scratch
 --------------------
 
+** Is cnonce required? It would help protect against offline dictionary attacks where an impersonating server gets the client to send it MAC(HMAC(snonce, realm, password), TAG_CLIENT|sid), for some `snonce` that the attacker chooses. Then the attacker could mount an offline dictionary attack if it could choose `sid`; can it pick `sid` to be whatever it wants? If so, then a cnonce would be necessary to prevent an offline dictionary attack. If not, then the attacker can't build a dictionary because `sid` would differ for each request. Key question: Can server influence choice of `sid`?
+
 Want to protect against the client guessing server passwords
 AND someone impersonating the server for the first response and then
 being able to mount an offline dictionary attack and then doing MITM.
