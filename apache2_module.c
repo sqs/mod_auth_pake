@@ -686,23 +686,17 @@ static int add_auth_info(request_rec *r)
     auth_tcpcrypt_header_rec *resp =
                 (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
                                                            &auth_tcpcrypt_module);
-    const char *ai = NULL, *digest = NULL, *nextnonce = "";
+    const char *ai = NULL, *resp_dig = NULL;
 
     if (resp == NULL || !resp->needed_auth || conf == NULL) {
         return OK;
     }
 
-    const char *resp_dig, *ha1, *a2, *ha2;
-
-    ha1 = conf->ha1;
-
-    a2 = apr_pstrcat(r->pool, ":", resp->uri, NULL);
-    ha2 = ap_md5(r->pool, (const unsigned char *)a2);
-
-    resp_dig = ap_md5(r->pool,
-                      (unsigned char *)apr_pstrcat(r->pool, ha1, ":",
-                                                   resp->nonce, ":",
-                                                   ":", ha2, NULL));
+    resp_dig = get_userpw_hash(r, resp, conf);
+    if (!resp_dig) {
+        /* we failed to allocate a client struct */
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
 
     /* assemble Authentication-Info header
      */

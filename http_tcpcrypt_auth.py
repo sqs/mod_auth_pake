@@ -6,6 +6,16 @@ logging.basicConfig(level=logging.DEBUG)
 def tcpcrypt_get_sid():
     return 1122334455
 
+class TcpcryptServerAuthFailed(urllib2.URLError):
+
+    def __init__(self, url, headers):
+        self.url = url
+        self.headers = headers
+
+    def __str__(self):
+        return "<TcpcryptServerAuthFailed url=%s headers=%s>" \
+            % (self.url, self.headers)
+
 class TcpcryptAuthHandler(urllib2.BaseHandler):
 
     """
@@ -75,9 +85,11 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             
             req.add_unredirected_header(self.auth_header, auth_val)
             resp = self.parent.open(req, timeout=req.timeout)
+            if not self.verify_response_auth(req, chal, resp):
+                raise TcpcryptServerAuthFailed(req.get_full_url(), resp.headers)
             return resp
 
-    def get_authorization(self, req, chal):
+    def get_authorization_dict(self, req, chal):
         # taken from urllib2
         try:
             realm = chal['realm']
@@ -96,14 +108,17 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             return None
 
         A1 = "%s:%s:%s:%lx" % (nonce, realm, pw, tcpcrypt_get_sid())
-        A2 = "%s:%s" % (req.get_method(), req.get_selector())
-
-        respdig = H(A1)
-
-        base = 'username="%s", realm="%s", nonce="%s", uri="%s", ' \
-               'response="%s"' % (user, realm, nonce, req.get_selector(), respdig)
-        base += ', algorithm="%s"' % algorithm
-        return base
+        return dict(username=user, realm=realm, nonce=nonce, algorithm=algorithm,
+                    uri=req.get_selector(), respdig=H(A1))
+        
+    def get_authorization(self, req, chal):
+        authdict = self.get_authorization_dict(req, chal)
+        if authdict:
+            return 'username="%(username)s", realm="%(realm)s", ' \
+                'nonce="%(nonce)s", uri="%(uri)s", response="%(respdig)s", ' \
+                'algorithm="%(algorithm)s"' % authdict
+        else:
+            return None
 
     def get_algorithm_impls(self, algorithm):
         # from urllib2
@@ -116,3 +131,21 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             H = lambda x: hashlib.sha1(x).hexdigest()
         KD = lambda s, d: H("%s:%s" % (s, d))
         return H, KD
+
+    def verify_response_auth(self, req, chal, resp):
+        ai_hdr = resp.headers.get('Authentication-Info', None)
+        if not ai_hdr:
+            return False
+        ai = urllib2.parse_keqv_list(urllib2.parse_http_list(ai_hdr))
+        rspauth = ai.get('rspauth', None)
+        if not rspauth:
+            return False
+
+        # construct expected rspauth
+        exp_rspauth = self.get_authorization_dict(req, chal)['respdig']
+        if rspauth == exp_rspauth:
+            return True
+        else:
+            self.logger.debug('bad rspauth "%s", expected "%s"' % \
+                                  (rspauth, exp_rspauth))
+            return False
