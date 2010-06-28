@@ -583,15 +583,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         }
     }
 
-    /* XXX add back */
-    /* if (resp->opaque && resp->opaque_num == 0) { */
-    /*     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, */
-    /*                   "auth_tcpcrypt: received invalid opaque - got `%s'", */
-    /*                   resp->opaque); */
-    /*     note_digest_auth_failure(r, conf, resp, 0); */
-    /*     return HTTP_UNAUTHORIZED; */
-    /*} */
-
     if (strcmp(resp->realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
