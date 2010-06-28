@@ -16,7 +16,7 @@ static const char *ltox(apr_pool_t *p, unsigned long num)
  * get_userpw_hash() will be called each time a new session needs to be
  * generated and returns
  *
- *   MD5(MD5(snonce ":" realm ":" password) ":" tcpcrypt_sid)
+ *   MD5(nonce ":" realm ":" password ":" tcpcrypt_sid)
  *
  */
 
