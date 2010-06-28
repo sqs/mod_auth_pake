@@ -37,6 +37,14 @@ class TestTcpcryptAuthHandler(unittest.TestCase):
                                   'jsmith', 'jsmith')
         self.assertResponse(req, 200)
 
+    def test_authentication_persists(self):
+        req = Request('http://localhost:8080/protected/')
+        self.handler.add_password('protected area',
+                                  'http://localhost:8080/protected/',
+                                  'jsmith', 'jsmith')
+        self.assertResponse(req, 200)
+        self.assertResponse(req, 200)
+
     def test_fails_authentication(self):
         req = Request('http://localhost:8080/protected/')
         self.assertResponse(req, 401)
