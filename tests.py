@@ -45,9 +45,34 @@ class TestTcpcryptAuthHandler(unittest.TestCase):
         self.assertResponse(req, 200)
         self.assertResponse(req, 200)
 
-    def test_fails_authentication(self):
+    def test_fails_authentication_no_credentials(self):
         req = Request('http://localhost:8080/protected/')
         self.assertResponse(req, 401)
+
+    def test_fails_authentication_wrong_password(self):
+        req = Request('http://localhost:8080/protected/')
+        self.handler.add_password('protected area',
+                                  'http://localhost:8080/protected/',
+                                  'jsmith', 'badpw')
+        self.assertResponse(req, 401)
+
+    
+    def test_fails_authentication_wrong_realm(self):
+        req = Request('http://localhost:8080/protected/')
+        self.handler.add_password('badrealm',
+                                  'http://localhost:8080/protected/',
+                                  'jsmith', 'jsmith')
+        self.assertResponse(req, 401)
+
+
+    
+    def test_fails_authentication_wrong_username(self):
+        req = Request('http://localhost:8080/protected/')
+        self.handler.add_password('protected area',
+                                  'http://localhost:8080/protected/',
+                                  'baduser', 'jsmith')
+        self.assertResponse(req, 401)
+       
        
 if __name__ == "__main__":
     unittest.main()
