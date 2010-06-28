@@ -665,19 +665,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
  * Authorization-Info header code
  */
 
-#ifdef SEND_DIGEST
-static const char *hdr(const apr_table_t *tbl, const char *name)
-{
-    const char *val = apr_table_get(tbl, name);
-    if (val) {
-        return val;
-    }
-    else {
-        return "";
-    }
-}
-#endif
-
 static int add_auth_info(request_rec *r)
 {
     const auth_tcpcrypt_config_rec *conf =
