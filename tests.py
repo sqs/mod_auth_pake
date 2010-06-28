@@ -55,7 +55,6 @@ class TestTcpcryptAuthHandler(unittest.TestCase):
                                   'http://localhost:8080/protected/',
                                   'jsmith', 'badpw')
         self.assertResponse(req, 401)
-
     
     def test_fails_authentication_wrong_realm(self):
         req = Request('http://localhost:8080/protected/')
@@ -64,8 +63,6 @@ class TestTcpcryptAuthHandler(unittest.TestCase):
                                   'jsmith', 'jsmith')
         self.assertResponse(req, 401)
 
-
-    
     def test_fails_authentication_wrong_username(self):
         req = Request('http://localhost:8080/protected/')
         self.handler.add_password('protected area',
