@@ -2,6 +2,6 @@
 *.la
 *.lo
 *.slo
-
+test/test_http_tcpcrypt_auth
 *.pyc
 TAGS
