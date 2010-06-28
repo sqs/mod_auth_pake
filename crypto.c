@@ -1,5 +1,5 @@
 #include "crypto.h"
-
+#include "apache2_module.h"
 
 
 static const char *ltox(apr_pool_t *p, unsigned long num)
@@ -24,11 +24,10 @@ const char *get_userpw_hash(const request_rec *r,
                             const auth_tcpcrypt_header_rec *resp,
                             const auth_tcpcrypt_config_rec *conf)
 {
-    return ap_md5(r->pool,
-             (unsigned char *) apr_pstrcat(r->pool,
-                                           resp->nonce, ":",
-                                           resp->realm, ":",
-                                           "jsmith", ":",
-                                           ltox(r->pool, tcpcrypt_get_sid()),
-                                           NULL));
+    unsigned char *resp_plain = apr_pstrcat(r->pool,
+                                            conf->ha1, ":",
+                                            resp->nonce, ":",
+                                            ltox(r->pool, tcpcrypt_get_sid()),
+                                            NULL);
+    return ap_md5(r->pool, resp_plain);
 }

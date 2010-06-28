@@ -107,9 +107,10 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
             self.logger.debug("get_authorization: no user for realm '%s'" % realm)
             return None
 
-        A1 = "%s:%s:%s:%lx" % (nonce, realm, pw, tcpcrypt_get_sid())
+        A1 = "%s:%s:%s" % (user, realm, pw)
+        respdig = "%s:%s:%lx" % (H(A1), nonce, tcpcrypt_get_sid())
         return dict(username=user, realm=realm, nonce=nonce, algorithm=algorithm,
-                    uri=req.get_selector(), respdig=H(A1))
+                    uri=req.get_selector(), respdig=H(respdig))
         
     def get_authorization(self, req, chal):
         authdict = self.get_authorization_dict(req, chal)
