@@ -1,3 +1,5 @@
+CURL=-lcurl
+
 default: local
 
 local: auth_tcpcrypt.o
@@ -13,7 +15,7 @@ restart:
 	sudo /etc/init.d/apache2 restart
 
 test_http_tcpcrypt_auth.o:
-	gcc -std=c99 -I../tcpcrypt/code/user -o test/test_http_tcpcrypt_auth test/test_http_tcpcrypt_auth.c
+	gcc -std=c99 -I../tcpcrypt/code/user ${CURL} -o test/test_http_tcpcrypt_auth test/test_http_tcpcrypt_auth.c
 
 test: test_http_tcpcrypt_auth.o
 	echo
