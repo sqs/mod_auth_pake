@@ -13,7 +13,7 @@
 #include "parser.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
-#define DETAILED 0
+static int detailed = 0; // level of detail for tests
 
 #define TEST_HOST "localhost"
 #define TEST_PORT "8080"
@@ -139,9 +139,9 @@ struct http_response *do_http_request(struct http_request *req) {
     res.curl_code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &res.status);
 
-    if (DETAILED) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
-    if (DETAILED) headers_inspect(&res);
-    /* if (DETAILED) printf("%s", res.body.data); */
+    if (detailed) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
+    if (detailed) headers_inspect(&res);
+    /* if (detailed) printf("%s", res.body.data); */
 
     if (res.curl_code != 0) {
         fprintf(stderr, "expected curl_code=0, got %d\n", res.curl_code);
@@ -158,14 +158,14 @@ void test_auth_challenge(void) {
     TEST_ASSERT(res->status == 401);
 
     char *www_auth = header_val(res, "WWW-Authenticate");
-    if (DETAILED) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
+    if (detailed) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
     TEST_ASSERT(www_auth != NULL);
     TEST_ASSERT(strstr(www_auth, " Tcpcrypt ") == www_auth);
 
     struct http_tcpcrypt_auth_chal chal;
     memset(&chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
     parse_auth_chal(&chal, www_auth);
-    if (DETAILED) inspect_auth_chal(&chal);
+    if (detailed) inspect_auth_chal(&chal);
     TEST_ASSERT(chal.auth_name && strcmp(chal.auth_name, "Tcpcrypt") == 0);
     TEST_ASSERT(chal.realm && strcmp(chal.realm, "protected area") == 0);
     TEST_ASSERT(chal.domain && strcmp(chal.domain, "/protected/ http://localhost:8080/protected/") == 0);
@@ -191,7 +191,11 @@ static struct test _tests[] = {
 
 /* Run tests matching spec, or all tests if spec is NULL. */
 void run_tests(char *spec) {
-    if (spec == NULL) spec = "";
+    detailed = 1;
+    if (spec == NULL) {
+        spec = "";
+        detailed = 0;
+    }
     for (int i=0; i < ARRAY_SIZE(_tests); ++i) {
         struct test *t = &_tests[i];
         if (strstr(t->t_desc, spec)) {
