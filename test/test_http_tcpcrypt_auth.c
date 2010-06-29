@@ -26,7 +26,7 @@ static CURL *curl;
 #define TEST_ASSERT(n)					                     \
 	do {								     \
 		if (!(n)) 						     \
-			printf("Test FAILED at %s:%d", __FILE__, __LINE__); \
+			printf("Test FAILED at %s:%d\n", __FILE__, __LINE__); \
 	} while (0)
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
@@ -61,6 +61,7 @@ WriteMemoryCallback(void *ptr, size_t size, size_t nmemb, void *data)
   return realsize;
 }
 
+
 struct http_request {
     char *url;
     char *user;
@@ -72,7 +73,28 @@ struct http_response {
     CURLcode curl_code;
     long int status;
     struct chunk body;
+    struct curl_slist *headers;
 };
+
+static size_t
+header_callback(void *ptr, size_t size, size_t nmemb, void *res_) {
+    size_t realsize = size*nmemb;
+    struct http_response *res = res_;
+    char *header_line = malloc(realsize+1);
+    memcpy(header_line, ptr, realsize);
+    header_line[realsize] = '\0';
+    res->headers = curl_slist_append(res->headers, header_line);
+
+    return realsize;
+}
+
+void headers_inspect(struct http_response *res) {
+    struct curl_slist *e;
+    for (e = res->headers; e != NULL; e = e->next) {
+        char *header_line = e->data;
+        printf("%s", header_line);
+    }
+}
 
 struct http_response *do_http_request(struct http_request *req) {
     static struct http_response res;
@@ -81,16 +103,24 @@ struct http_response *do_http_request(struct http_request *req) {
     if (res.body.data) free(res.body.data);
     res.body.data = NULL;
     res.body.size = 0;
+    res.headers = NULL;
     
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&res.body);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)&res);
+    curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
     curl_easy_setopt(curl, CURLOPT_URL, req->url);
     res.curl_code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &res.status);
 
     if (DETAILED) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
-    if (DETAILED) printf("%s", res.body.data);
+    if (DETAILED) headers_inspect(&res);
+    /* if (DETAILED) printf("%s", res.body.data); */
 
-    TEST_ASSERT(res.curl_code == 0);
+    if (res.curl_code != 0) {
+        fprintf(stderr, "expected curl_code=0, got %d\n", res.curl_code);
+        TEST_ASSERT(res.curl_code == 0);
+    }
 
     return &res;
 }
@@ -134,8 +164,6 @@ void run_tests(char *spec) {
 int main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_ALL);
     curl = curl_easy_init();
-    curl_easy_setopt(curl, CURLOPT_HEADER, 1);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     run_tests(argc == 1 ? NULL : argv[1]);
     curl_easy_cleanup(curl);
 }
