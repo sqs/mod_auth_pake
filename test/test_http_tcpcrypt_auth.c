@@ -88,6 +88,8 @@ struct http_response *do_http_request(struct http_request *req) {
 
     if (DEBUG) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
 
+    TEST_ASSERT(res.curl_code == 0);
+
     return &res;
 }
 
@@ -99,7 +101,7 @@ void test_gets_root_unauthenticated(void) {
     struct http_request req;
     req.url = TEST_ROOT_URL;
     struct http_response *res = do_http_request(&req);
-    TEST_ASSERT(res->curl_code == 0);
+    TEST_ASSERT(res->status == 200);
 }
 
 static struct test _tests[] = {
