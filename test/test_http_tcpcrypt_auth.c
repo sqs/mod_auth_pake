@@ -204,11 +204,21 @@ void test_make_ha1(void) {
     TEST_ASSERT(strncmp(exp_ha1, ha1, strlen(exp_ha1)) == 0);
 }
 
+void test_make_response(void) {
+    char resp[33];
+    make_response(resp, "aaaabbbbccccddddeeeeffff00001111", 
+                  "1111222233334444555566667777888899990000aa",
+                  1122334455);
+    char exp_resp[] = "66130504aac9beb441806ad9c1c8f245";
+    TEST_ASSERT(strncmp(exp_resp, resp, strlen(exp_resp)) == 0);
+}
+
 static struct test _tests[] = {
     { test_authenticates_first_time, "authsingle"},
     { test_gets_root_unauthenticated, "noauth"},
     { test_auth_challenge, "chal"},
     { test_make_ha1, "make_ha1"},
+    { test_make_response, "make_response" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
