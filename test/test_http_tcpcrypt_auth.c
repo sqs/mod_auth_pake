@@ -10,6 +10,7 @@
 /* #include <sys/socket.h> */
 /* #include <arpa/inet.h> */
 #include <curl/curl.h>
+#include "tcpcrypt_session.h"
 #include "parser.h"
 #include "http_tcpcrypt_auth.h"
 
@@ -22,6 +23,7 @@ static int detailed = 0; // level of detail for tests
 #define TEST_ROOT_URL "http://" TEST_HOST ":" TEST_PORT "/"
 #define TEST_PROTECTED_URL TEST_ROOT_URL TEST_PROTECTED_PATH
 #define TEST_USER1 "jsmith"
+#define TEST_REALM1 "protected area"
 #define TEST_PW1 "jsmith"
 
 static CURL *curl;
@@ -149,6 +151,8 @@ struct http_response *do_http_request(struct http_request *req) {
         TEST_ASSERT(res.curl_code == 0);
     }
 
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, NULL);
+
     return &res;
 }
 
@@ -186,7 +190,27 @@ void test_authenticates_first_time(void) {
     
     if (detailed) inspect_auth_chal(&chal);
 
+    char ha1[33];
+    make_ha1(ha1, TEST_USER1, TEST_REALM1, TEST_PW1);
+    ha1[32] = '\0';
+    char resp[33];
+    make_response(resp, ha1, chal.nonce, tcpcrypt_get_sid());
+    resp[32] = '\0';
+
+    /* construct Authorization header */
+    char auth_hdr[1000];
+    sprintf(auth_hdr,
+            "Authorization: Tcpcrypt username=\"%s\", " \
+            "realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"",
+            TEST_USER1, TEST_REALM1, chal.nonce, TEST_PROTECTED_URL, resp);
     
+    /* set header */
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, auth_hdr);
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+    res = do_http_request(&req);
+    TEST_ASSERT(res->status == 200);
 }
 
 void test_gets_root_unauthenticated(void) {

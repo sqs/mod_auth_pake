@@ -32,7 +32,7 @@ void make_ha1(char * restrict ha1,
 void make_response(char * restrict resp,
                    const char *ha1,
                    const char *nonce,
-                   long sid)
+                   unsigned long sid)
 {
     EVP_MD_CTX mdctx;
     unsigned char md[EVP_MAX_MD_SIZE];

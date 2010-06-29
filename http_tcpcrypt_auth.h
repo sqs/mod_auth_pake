@@ -17,6 +17,6 @@ void make_ha1(char * restrict ha1,
 void make_response(char * restrict response,
                    const char *ha1,
                    const char *nonce,
-                   long sid);
+                   unsigned long sid);
 
 #endif // HTTP_TCPCRYPT_AUTH_H
