@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
+#include <strings.h>
 #include <string.h>
 /* #include <netdb.h> */
 /* #include <sys/types.h> */
@@ -104,13 +105,13 @@ char *header_val(struct http_response *res, char *k) {
     struct curl_slist *e;
     
     header_prefix = malloc(strlen(k) + 2); // len + ':' + '\0'
-    strcat(header_prefix, k);
+    strcpy(header_prefix, k);
     strcat(header_prefix, ":");
 
     for (e = res->headers; e != NULL; e = e->next) {
         char *header_line = e->data;
-        char *pos = strstr(header_line, header_prefix) - header_line;
-        if (pos == 0) {
+        char *m = strstr(header_line, header_prefix);
+        if (m == header_line) {
             val = &header_line[strlen(header_prefix)];
             val += strspn(val, " "); /* strip leading whitespace */
             break;
@@ -119,6 +120,22 @@ char *header_val(struct http_response *res, char *k) {
 
     free(header_prefix);
     return val;
+}
+
+struct http_tcpcrypt_auth_chal {
+    char *auth_name;
+    char *realm;
+    char *nonce;
+    char *algorithm;
+    char *domain;
+};
+
+void parse_auth_chal(struct http_tcpcrypt_auth_chal *chal, char *www_authenticate) {
+    char *v = www_authenticate; /* save typing */
+
+    /* auth_name */
+    *(char *)index(v, ' ') = '\0';
+    chal->auth_name = v;
 }
 
 struct http_response *do_http_request(struct http_request *req) {
@@ -157,8 +174,12 @@ void test_auth_challenge(void) {
     TEST_ASSERT(res->status == 401);
 
     char *www_auth = header_val(res, "WWW-Authenticate");
-    fprintf(stderr, "WWW-Authenticate:%s\n", www_auth);
-    TEST_ASSERT(www_auth && strcmp(www_auth, "asdf") == 0);
+    ///if (DETAILED) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
+    TEST_ASSERT(www_auth != NULL);
+
+    struct http_tcpcrypt_auth_chal chal;
+    parse_auth_chal(&chal, www_auth);
+    TEST_ASSERT(chal.auth_name && strcmp(chal.auth_name, "Tcpcrypt") == 0);
 }
 
 void test_authenticates_first_time(void) {
