@@ -93,6 +93,13 @@ struct http_response *do_http_request(struct http_request *req) {
     return &res;
 }
 
+void test_auth_challenge(void) {
+    struct http_request req;
+    req.url = TEST_PROTECTED_URL;
+    struct http_response *res = do_http_request(&req);
+    TEST_ASSERT(res->status == 401);
+}
+
 void test_authenticates_first_time(void) {
     return;
 }
@@ -105,8 +112,9 @@ void test_gets_root_unauthenticated(void) {
 }
 
 static struct test _tests[] = {
-    { test_authenicates_first_time, "Authenticates first time"},
+    { test_authenticates_first_time, "Authenticates first time"},
     { test_gets_root_unauthenticated, "Gets / without auth"},
+    { test_auth_challenge, "401 auth challenge"},
 };
 
 void run_all_tests(void) {
