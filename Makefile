@@ -18,6 +18,5 @@ test_http_tcpcrypt_auth.o:
 	gcc -std=c99 -I../tcpcrypt/code/user ${CURL} -o test/test_http_tcpcrypt_auth test/test_http_tcpcrypt_auth.c
 
 test: test_http_tcpcrypt_auth.o
-	echo
 	test/test_http_tcpcrypt_auth
 	

@@ -11,10 +11,13 @@
 #include <curl/curl.h>
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
+#define DEBUG 1
 
 #define TEST_HOST "localhost"
 #define TEST_PORT "8080"
-#define TEST_PATH "/protected/"
+#define TEST_PROTECTED_PATH "protected/"
+#define TEST_ROOT_URL "http://" TEST_HOST ":" TEST_PORT "/"
+#define TEST_PROTECTED_URL TEST_ROOT_URL TEST_PROTECTED_PATH
 #define TEST_USER1 "jsmith"
 #define TEST_PW1 "jsmith"
 
@@ -23,26 +26,80 @@ static CURL *curl;
 #define TEST_ASSERT(n)					                     \
 	do {								     \
 		if (!(n)) 						     \
-			errx(1, "Test FAILED at %s:%d", __FILE__, __LINE__); \
+			printf("Test FAILED at %s:%d", __FILE__, __LINE__); \
 	} while (0)
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
-
 struct test {
-	void	(*t_cb)(void);
-	char	*t_desc;
+    void	(*t_cb)(void);
+    char	*t_desc;
 };
 
 
+/*************************************************
+ * HTTP stuff
+ */
+
+struct chunk {
+  char *data;
+  size_t size;
+};
+
+static size_t
+WriteMemoryCallback(void *ptr, size_t size, size_t nmemb, void *data)
+{
+  size_t realsize = size * nmemb;
+  struct chunk *mem = (struct chunk *)data;
+ 
+  mem->data = realloc(mem->data, mem->size + realsize + 1);
+  if (mem->data) {
+    memcpy(&(mem->data[mem->size]), ptr, realsize);
+    mem->size += realsize;
+    mem->data[mem->size] = 0;
+  }
+  return realsize;
+}
+
+struct http_request {
+    char *url;
+    char *user;
+    char *pw;
+    char *realm;
+};
+
+struct http_response {
+    CURLcode curl_code;
+    long int status;
+    struct chunk body;
+};
+
+struct http_response *do_http_request(struct http_request *req) {
+    static struct http_response res;
+    
+    /* reinit */
+    res.body.data = NULL;
+    res.body.size = 0;
+    
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&res.body);
+    curl_easy_setopt(curl, CURLOPT_URL, req->url);
+    res.curl_code = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &res.status);
+
+    if (DEBUG) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
+
+    return &res;
+}
 
 void test_authenicates_first_time(void) {
     return;
 }
 
 void test_gets_root_unauthenticated(void) {
-    curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:8080/");
-    CURLcode success = curl_easy_perform(curl);
+    struct http_request req;
+    req.url = TEST_ROOT_URL;
+    struct http_response *res = do_http_request(&req);
+    TEST_ASSERT(res->curl_code == 0);
 }
 
 static struct test _tests[] = {
@@ -61,6 +118,8 @@ void run_all_tests(void) {
 int main(int argc, char **argv) {
     curl_global_init(CURL_GLOBAL_ALL);
     curl = curl_easy_init();
+    curl_easy_setopt(curl, CURLOPT_HEADER, 1);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
     run_all_tests();
     curl_easy_cleanup(curl);
 }
