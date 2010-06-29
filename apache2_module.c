@@ -618,14 +618,14 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    const char *exp_digest;
+    const char *exp_response;
 
-    exp_digest = get_userpw_hash(r, resp, conf);
-    if (!exp_digest) {
+    exp_response = get_userpw_hash(r, resp, conf);
+    if (!exp_response) {
         /* we failed to allocate a client struct */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    if (strcmp(resp->digest, exp_digest)) {
+    if (strcmp(resp->digest, exp_response)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
                       r->uri);
