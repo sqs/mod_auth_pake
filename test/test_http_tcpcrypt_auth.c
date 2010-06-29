@@ -93,7 +93,7 @@ struct http_response *do_http_request(struct http_request *req) {
     return &res;
 }
 
-void test_authenicates_first_time(void) {
+void test_authenticates_first_time(void) {
     return;
 }
 
