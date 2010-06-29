@@ -11,6 +11,7 @@
 /* #include <arpa/inet.h> */
 #include <curl/curl.h>
 #include "parser.h"
+#include "http_tcpcrypt_auth.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests
@@ -173,7 +174,19 @@ void test_auth_challenge(void) {
 }
 
 void test_authenticates_first_time(void) {
-    return;
+    struct http_request req;
+    req.url = TEST_PROTECTED_URL;
+    struct http_response *res = do_http_request(&req);
+    TEST_ASSERT(res->status == 401);
+
+    char *www_auth = header_val(res, "WWW-Authenticate");
+    struct http_tcpcrypt_auth_chal chal;
+    memset(&chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
+    parse_auth_chal(&chal, www_auth);
+    
+    if (detailed) inspect_auth_chal(&chal);
+
+    
 }
 
 void test_gets_root_unauthenticated(void) {
@@ -183,10 +196,19 @@ void test_gets_root_unauthenticated(void) {
     TEST_ASSERT(res->status == 200);
 }
 
+void test_make_ha1(void) {
+    char ha1[33];
+    make_ha1(ha1, "jsmith", "protected area", "jsmith");
+    ha1[32] = '\0';
+    char exp_ha1[] = "a6ee4e8e8b478bbf7b7a98317597e070";
+    TEST_ASSERT(strncmp(exp_ha1, ha1, strlen(exp_ha1)) == 0);
+}
+
 static struct test _tests[] = {
     { test_authenticates_first_time, "authsingle"},
     { test_gets_root_unauthenticated, "noauth"},
     { test_auth_challenge, "chal"},
+    { test_make_ha1, "make_ha1"},
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
