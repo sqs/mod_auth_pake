@@ -10,9 +10,10 @@
 /* #include <sys/socket.h> */
 /* #include <arpa/inet.h> */
 #include <curl/curl.h>
+#include "parser.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
-#define DETAILED 1
+#define DETAILED 0
 
 #define TEST_HOST "localhost"
 #define TEST_PORT "8080"
@@ -113,29 +114,12 @@ char *header_val(struct http_response *res, char *k) {
         char *m = strstr(header_line, header_prefix);
         if (m == header_line) {
             val = &header_line[strlen(header_prefix)];
-            val += strspn(val, " "); /* strip leading whitespace */
             break;
         }
     }
 
     free(header_prefix);
     return val;
-}
-
-struct http_tcpcrypt_auth_chal {
-    char *auth_name;
-    char *realm;
-    char *nonce;
-    char *algorithm;
-    char *domain;
-};
-
-void parse_auth_chal(struct http_tcpcrypt_auth_chal *chal, char *www_authenticate) {
-    char *v = www_authenticate; /* save typing */
-
-    /* auth_name */
-    *(char *)index(v, ' ') = '\0';
-    chal->auth_name = v;
 }
 
 struct http_response *do_http_request(struct http_request *req) {
@@ -174,12 +158,18 @@ void test_auth_challenge(void) {
     TEST_ASSERT(res->status == 401);
 
     char *www_auth = header_val(res, "WWW-Authenticate");
-    ///if (DETAILED) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
+    if (DETAILED) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
     TEST_ASSERT(www_auth != NULL);
+    TEST_ASSERT(strstr(www_auth, " Tcpcrypt ") == www_auth);
 
     struct http_tcpcrypt_auth_chal chal;
+    memset(&chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
     parse_auth_chal(&chal, www_auth);
+    if (DETAILED) inspect_auth_chal(&chal);
     TEST_ASSERT(chal.auth_name && strcmp(chal.auth_name, "Tcpcrypt") == 0);
+    TEST_ASSERT(chal.realm && strcmp(chal.realm, "protected area") == 0);
+    TEST_ASSERT(chal.domain && strcmp(chal.domain, "/protected/ http://localhost:8080/protected/") == 0);
+    TEST_ASSERT(chal.nonce && strlen(chal.nonce) == 52);
 }
 
 void test_authenticates_first_time(void) {
