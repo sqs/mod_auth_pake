@@ -11,7 +11,7 @@
 #include <curl/curl.h>
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
-#define DEBUG 1
+#define DETAILED 1
 
 #define TEST_HOST "localhost"
 #define TEST_PORT "8080"
@@ -86,7 +86,8 @@ struct http_response *do_http_request(struct http_request *req) {
     res.curl_code = curl_easy_perform(curl);
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &res.status);
 
-    if (DEBUG) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
+    if (DETAILED) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
+    if (DETAILED) printf("%s", res.body.data);
 
     TEST_ASSERT(res.curl_code == 0);
 
@@ -117,11 +118,15 @@ static struct test _tests[] = {
     { test_auth_challenge, "chal"},
 };
 
-void run_all_tests(void) {
+/* Run tests matching spec, or all tests if spec is NULL. */
+void run_tests(char *spec) {
+    if (spec == NULL) spec = "";
     for (int i=0; i < ARRAY_SIZE(_tests); ++i) {
         struct test *t = &_tests[i];
-        printf("%s\n", t->t_desc);
-        t->t_cb();
+        if (strstr(t->t_desc, spec)) {
+            fprintf(stderr, "*** %s\n", t->t_desc);
+            t->t_cb();
+        }
     }
 }
 
@@ -130,6 +135,6 @@ int main(int argc, char **argv) {
     curl = curl_easy_init();
     curl_easy_setopt(curl, CURLOPT_HEADER, 1);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-    run_all_tests();
+    run_tests(argc == 1 ? NULL : argv[1]);
     curl_easy_cleanup(curl);
 }
