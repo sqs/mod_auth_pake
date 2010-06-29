@@ -78,6 +78,7 @@ struct http_response *do_http_request(struct http_request *req) {
     static struct http_response res;
     
     /* reinit */
+    if (res.body.data) free(res.body.data);
     res.body.data = NULL;
     res.body.size = 0;
     
