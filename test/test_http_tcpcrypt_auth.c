@@ -96,6 +96,31 @@ void headers_inspect(struct http_response *res) {
     }
 }
 
+/* Returns the NULL-terminated value of the HTTP header with name `k`,
+   or NULL if it's not found. */
+char *header_val(struct http_response *res, char *k) {
+    char *val = NULL;
+    char *header_prefix;
+    struct curl_slist *e;
+    
+    header_prefix = malloc(strlen(k) + 2); // len + ':' + '\0'
+    strcat(header_prefix, k);
+    strcat(header_prefix, ":");
+
+    for (e = res->headers; e != NULL; e = e->next) {
+        char *header_line = e->data;
+        char *pos = strstr(header_line, header_prefix) - header_line;
+        if (pos == 0) {
+            val = &header_line[strlen(header_prefix)];
+            val += strspn(val, " "); /* strip leading whitespace */
+            break;
+        }
+    }
+
+    free(header_prefix);
+    return val;
+}
+
 struct http_response *do_http_request(struct http_request *req) {
     static struct http_response res;
     
@@ -130,6 +155,10 @@ void test_auth_challenge(void) {
     req.url = TEST_PROTECTED_URL;
     struct http_response *res = do_http_request(&req);
     TEST_ASSERT(res->status == 401);
+
+    char *www_auth = header_val(res, "WWW-Authenticate");
+    fprintf(stderr, "WWW-Authenticate:%s\n", www_auth);
+    TEST_ASSERT(www_auth && strcmp(www_auth, "asdf") == 0);
 }
 
 void test_authenticates_first_time(void) {
