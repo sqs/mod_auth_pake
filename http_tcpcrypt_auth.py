@@ -94,11 +94,10 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
         try:
             realm = chal['realm']
             nonce = chal['nonce']
-            algorithm = chal.get('algorithm', 'MD5')
         except KeyError:
             return None
 
-        H, KD = self.get_algorithm_impls(algorithm)
+        H, KD = self.get_algorithm_impls('MD5')
         if H is None:
             return None
 
@@ -109,15 +108,15 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
 
         A1 = "%s:%s:%s" % (user, realm, pw)
         respdig = "%s:%s:%lx" % (H(A1), nonce, tcpcrypt_get_sid())
-        return dict(username=user, realm=realm, nonce=nonce, algorithm=algorithm,
+        return dict(username=user, realm=realm, nonce=nonce,
                     uri=req.get_selector(), respdig=H(respdig))
         
     def get_authorization(self, req, chal):
         authdict = self.get_authorization_dict(req, chal)
         if authdict:
             return 'username="%(username)s", realm="%(realm)s", ' \
-                'nonce="%(nonce)s", uri="%(uri)s", response="%(respdig)s", ' \
-                'algorithm="%(algorithm)s"' % authdict
+                'nonce="%(nonce)s", uri="%(uri)s", response="%(respdig)s"' \
+                % authdict
         else:
             return None
 
@@ -128,8 +127,6 @@ class TcpcryptAuthHandler(urllib2.BaseHandler):
         # lambdas assume digest modules are imported at the top level
         if algorithm == 'MD5':
             H = lambda x: hashlib.md5(x).hexdigest()
-        elif algorithm == 'SHA':
-            H = lambda x: hashlib.sha1(x).hexdigest()
         KD = lambda s, d: H("%s:%s" % (s, d))
         return H, KD
 

@@ -148,8 +148,6 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
             resp->uri = apr_pstrdup(r->pool, value);
         else if (!strcasecmp(key, "response"))
             resp->digest = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "algorithm"))
-            resp->algorithm = apr_pstrdup(r->pool, value);
     }
 
     if (!resp->username || !resp->realm || !resp->nonce || !resp->uri
@@ -290,8 +288,8 @@ static void note_digest_auth_failure(request_rec *r,
     apr_table_mergen(r->err_headers_out,
                      "WWW-Authenticate",
                      apr_psprintf(r->pool, "Tcpcrypt realm=\"%s\", "
-                                  "nonce=\"%s\", algorithm=%s%s%s",
-                                  ap_auth_name(r), nonce, conf->algorithm,
+                                  "nonce=\"%s\"%s%s",
+                                  ap_auth_name(r), nonce,
                                   domain ? domain : "",
                                   stale ? ", stale=true" : ""));
 
@@ -587,15 +585,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
                       resp->realm, conf->realm);
-        note_digest_auth_failure(r, conf, resp, 0);
-        return HTTP_UNAUTHORIZED;
-    }
-
-    if (resp->algorithm != NULL
-        && strcasecmp(resp->algorithm, "MD5")) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: unknown algorithm `%s' received: %s",
-                      resp->algorithm, r->uri);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
