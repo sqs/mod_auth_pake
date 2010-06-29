@@ -300,7 +300,8 @@ static void note_digest_auth_failure(request_rec *r,
  * Authorization header verification code
  */
 
-static authn_status get_hash(request_rec *r, const char *user,
+/* Gets HA1 and stores it in `conf`. */
+static authn_status get_ha1(request_rec *r, const char *user,
                              auth_tcpcrypt_config_rec *conf)
 {
     authn_status auth_result;
@@ -589,7 +590,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_UNAUTHORIZED;
     }
 
-    return_code = get_hash(r, r->user, conf);
+    return_code = get_ha1(r, r->user, conf);
 
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
