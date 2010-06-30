@@ -125,51 +125,52 @@ char *header_val(struct http_response *res, char *k) {
     return val;
 }
 
-struct http_response *do_http_request(struct http_request *req) {
-    static struct http_response res;
-    
+void do_http_request(struct http_request *req, struct http_response *res) {
     /* reinit */
-    if (res.body.data) free(res.body.data);
-    res.body.data = NULL;
-    res.body.size = 0;
-    res.headers = NULL;
+    memset(res, '\0', sizeof(struct http_response));
     
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&res.body);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&res->body);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
-    curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)&res);
+    curl_easy_setopt(curl, CURLOPT_HEADERDATA, (void *)res);
     curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, header_callback);
     curl_easy_setopt(curl, CURLOPT_URL, req->url);
-    res.curl_code = curl_easy_perform(curl);
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &res.status);
+    res->curl_code = curl_easy_perform(curl);
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &res->status);
 
-    if (detailed) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res.status, res.body.size);
-    if (detailed) headers_inspect(&res);
-    /* if (detailed) printf("%s", res.body.data); */
+    if (detailed) fprintf(stderr, "GET %s: %ld (%d bytes)\n", req->url, res->status, res->body.size);
+    if (detailed) headers_inspect(res);
+    /* if (detailed) printf("%s", res->body.data); */
 
-    if (res.curl_code != 0) {
-        fprintf(stderr, "expected curl_code=0, got %d\n", res.curl_code);
-        TEST_ASSERT(res.curl_code == 0);
+    if (res->curl_code != 0) {
+        fprintf(stderr, "expected curl_code=0, got %d\n", res->curl_code);
+        TEST_ASSERT(res->curl_code == 0);
     }
 
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, NULL);
+}
 
-    return &res;
+void get_auth_challenge(struct http_request *req, struct http_response *res, struct http_tcpcrypt_auth_chal *chal) {
+    do_http_request(req, res);
+    char *www_auth = header_val(res, "WWW-Authenticate");
+
+    memset(chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
+    parse_auth_chal(chal, www_auth);
 }
 
 void test_auth_challenge(void) {
     struct http_request req;
+    struct http_response res;
+    struct http_tcpcrypt_auth_chal chal;
+    
     req.url = TEST_PROTECTED_URL;
-    struct http_response *res = do_http_request(&req);
-    TEST_ASSERT(res->status == 401);
+    get_auth_challenge(&req, &res, &chal);
+    TEST_ASSERT(res.status == 401);
 
-    char *www_auth = header_val(res, "WWW-Authenticate");
+    char *www_auth = header_val(&res, "WWW-Authenticate");
     if (detailed) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
     TEST_ASSERT(www_auth != NULL);
     TEST_ASSERT(strstr(www_auth, " Tcpcrypt ") == www_auth);
 
-    struct http_tcpcrypt_auth_chal chal;
-    memset(&chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
-    parse_auth_chal(&chal, www_auth);
     if (detailed) inspect_auth_chal(&chal);
     TEST_ASSERT(chal.auth_name && strcmp(chal.auth_name, "Tcpcrypt") == 0);
     TEST_ASSERT(chal.realm && strcmp(chal.realm, "protected area") == 0);
@@ -177,16 +178,18 @@ void test_auth_challenge(void) {
     TEST_ASSERT(chal.nonce && strlen(chal.nonce) == 52);
 }
 
-void test_authenticates_first_time(void) {
-    struct http_request req;
-    req.url = TEST_PROTECTED_URL;
-    struct http_response *res = do_http_request(&req);
-    TEST_ASSERT(res->status == 401);
+void test_auth_info(void) {
+    
+}
 
-    char *www_auth = header_val(res, "WWW-Authenticate");
+void test_authenticates_first_time(void) {
+struct http_request req;
+    struct http_response res;
     struct http_tcpcrypt_auth_chal chal;
-    memset(&chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
-    parse_auth_chal(&chal, www_auth);
+    
+    req.url = TEST_PROTECTED_URL;
+    get_auth_challenge(&req, &res, &chal);
+    TEST_ASSERT(res.status == 401);
     
     if (detailed) inspect_auth_chal(&chal);
 
@@ -209,15 +212,16 @@ void test_authenticates_first_time(void) {
     headers = curl_slist_append(headers, auth_hdr);
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-    res = do_http_request(&req);
-    TEST_ASSERT(res->status == 200);
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 200);
 }
 
 void test_gets_root_unauthenticated(void) {
     struct http_request req;
+    struct http_response res;
     req.url = TEST_ROOT_URL;
-    struct http_response *res = do_http_request(&req);
-    TEST_ASSERT(res->status == 200);
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 200);
 }
 
 void test_make_ha1(void) {
@@ -241,6 +245,7 @@ static struct test _tests[] = {
     { test_authenticates_first_time, "authsingle"},
     { test_gets_root_unauthenticated, "noauth"},
     { test_auth_challenge, "chal"},
+    { test_auth_info, "auth_info" },
     { test_make_ha1, "make_ha1"},
     { test_make_response, "make_response" },
 };
