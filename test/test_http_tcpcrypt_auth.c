@@ -178,7 +178,30 @@ void test_auth_challenge(void) {
     TEST_ASSERT(chal.nonce && strlen(chal.nonce) == 52);
 }
 
+void make_auth_hdr(char *hdr, struct http_tcpcrypt_auth_chal *chal) {
+    char ha1[33];
+    make_ha1(ha1, TEST_USER1, TEST_REALM1, TEST_PW1);
+    ha1[32] = '\0';
+    char resp[33];
+    make_response(resp, ha1, chal->nonce, tcpcrypt_get_sid());
+    resp[32] = '\0';
+
+    /* construct Authorization header */
+    sprintf(hdr,
+            "Authorization: Tcpcrypt username=\"%s\", " \
+            "realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"",
+            TEST_USER1, TEST_REALM1, chal->nonce, TEST_PROTECTED_URL, resp);
+ 
+}
+
 void test_auth_info(void) {
+    struct http_request req;
+    struct http_response res;
+    struct http_tcpcrypt_auth_chal chal;
+    
+    req.url = TEST_PROTECTED_URL;
+    get_auth_challenge(&req, &res, &chal);
+    TEST_ASSERT(res.status == 401);
     
 }
 
@@ -193,20 +216,9 @@ void test_authenticates_first_time(void) {
     
     if (detailed) inspect_auth_chal(&chal);
 
-    char ha1[33];
-    make_ha1(ha1, TEST_USER1, TEST_REALM1, TEST_PW1);
-    ha1[32] = '\0';
-    char resp[33];
-    make_response(resp, ha1, chal.nonce, tcpcrypt_get_sid());
-    resp[32] = '\0';
-
-    /* construct Authorization header */
     char auth_hdr[1000];
-    sprintf(auth_hdr,
-            "Authorization: Tcpcrypt username=\"%s\", " \
-            "realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"",
-            TEST_USER1, TEST_REALM1, chal.nonce, TEST_PROTECTED_URL, resp);
-    
+    make_auth_hdr(auth_hdr, &chal);
+
     /* set header */
     struct curl_slist *headers = NULL;
     headers = curl_slist_append(headers, auth_hdr);
