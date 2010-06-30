@@ -194,6 +194,13 @@ void make_auth_hdr(char *hdr, struct http_tcpcrypt_auth_chal *chal) {
  
 }
 
+void set_auth_hdr(CURL *curl_, char *auth_hdr) {
+    /* set header */
+    struct curl_slist *headers = NULL;
+    headers = curl_slist_append(headers, auth_hdr);
+    curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
+}
+
 void test_auth_info(void) {
     struct http_request req;
     struct http_response res;
@@ -218,11 +225,7 @@ void test_authenticates_first_time(void) {
 
     char auth_hdr[1000];
     make_auth_hdr(auth_hdr, &chal);
-
-    /* set header */
-    struct curl_slist *headers = NULL;
-    headers = curl_slist_append(headers, auth_hdr);
-    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
