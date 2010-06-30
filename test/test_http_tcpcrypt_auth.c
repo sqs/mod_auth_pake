@@ -183,7 +183,7 @@ void test_auth_info(void) {
 }
 
 void test_authenticates_first_time(void) {
-struct http_request req;
+    struct http_request req;
     struct http_response res;
     struct http_tcpcrypt_auth_chal chal;
     
