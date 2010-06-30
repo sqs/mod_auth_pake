@@ -201,6 +201,18 @@ void set_auth_hdr(CURL *curl_, char *auth_hdr) {
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
 }
 
+void parse_auth_info_rspauth(char *rspauth, char *auth_info) {
+    /* since rspauth is the only thing contained in the
+       Authentication-Info header, just use substrings
+       instead of an actual tokenizer
+    */
+    const size_t rspauth_digest_len = 32;
+    if (auth_info[0] == ' ') auth_info++;
+    auth_info += strlen("rspauth=\"");
+    memcpy(rspauth, auth_info, rspauth_digest_len);
+    rspauth[rspauth_digest_len] = '\0';
+}
+
 void test_auth_info(void) {
     struct http_request req;
     struct http_response res;
@@ -210,6 +222,26 @@ void test_auth_info(void) {
     get_auth_challenge(&req, &res, &chal);
     TEST_ASSERT(res.status == 401);
     
+    char auth_hdr[1000];
+    make_auth_hdr(auth_hdr, &chal);
+    set_auth_hdr(curl, auth_hdr);
+
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 200);
+
+    /* check auth-info */
+    char *auth_info = header_val(&res, "Authentication-Info");
+    char rspauth[33];
+    parse_auth_info_rspauth(rspauth, auth_info);
+
+    /* make expected rspauth: MD5(HA1, sid) */
+    char exp_rspauth[33];
+    char ha1[33];
+    make_ha1(ha1, "jsmith", "protected area", "jsmith");
+    ha1[32] = '\0';
+    make_response(exp_rspauth, ha1, chal.nonce, tcpcrypt_get_sid());
+
+    TEST_ASSERT(strcmp(exp_rspauth, rspauth) == 0);
 }
 
 void test_authenticates_first_time(void) {
