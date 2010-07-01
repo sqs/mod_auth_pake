@@ -1,0 +1,86 @@
+\documentclass[12pt]{article}
+\usepackage{savetrees}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage{mathtools} % shortintertext
+
+\begin{document}
+
+\section{Definitions}
+
+\subsection{Before authentication occurs}
+
+\subsubsection*{Public}
+\begin{align*}
+\mathbf{G} &= \textrm{group of prime order $q$ on which CDH is hard}\\
+g &= \textrm{a generator of $\mathbf{G}$} \\
+U,\, V &= \textrm{chosen at random from $\mathbf{G}$} \\
+H_0,\, H_1 &= \textrm{cryptographic hash functions mapping strings to elements of $\mathbf{Z}_q$} \\
+H &= \textrm{hash function mapping to bit strings the size of a MAC key}
+\shortintertext{\subsubsection*{Shared secrets (known to client and server)}}
+\pi_0 &= H_0(\textrm{password}, \textrm{username}, \textrm{server name}) \\
+L &= g^{\pi_1}
+\shortintertext{\subsubsection*{Client-side secret}}
+\textrm{password} \\
+\pi_1 &= H_1(\textrm{password}, \textrm{username}, \textrm{server name})
+\end{align*}
+
+\pagebreak
+\section{Protocol}
+
+\begin{tabular}{p{9cm} | p{9cm}}
+\multicolumn{1}{c}{\bf Client} & \multicolumn{1}{c}{\bf Server} \\
+\hline
+%%%%%%%%%%%%%%%%
+{\tt GET /protected} &\\
+
+%%%%%%%%%%%%%%%%
+& {\tt WWW-Authenticate: Tcpcrypt realm="protected area"} \\
+
+%%%%%%%%%%%%%%%%
+Randomly choose $\alpha \in \mathbf{Z}_q.$
+
+Compute $\mathtt{gaUpi0}=g^\alpha U^{\pi_0}.$
+
+{\tt Authorization: Tcpcrypt gaUpi0="<gaUpi0 hex>"} & \\
+%%%%%%%%%%%%%%%%
+& Randomly choose $\beta \in \mathbf{Z}_q.$
+
+Compute $\mathtt{gBVpi0}=g^\beta V^{\pi_0}.$
+
+{\tt Authorization: Tcpcrypt gBVpi0="<gBVpi0 hex>"} \\
+
+%%%%%%%%%%%%%%%%
+Compute $g^\beta = \overbrace{g^\beta V^{\pi_0}}^{\mathtt{gBVpi0}} V^{-\pi_0}.$
+
+Compute $h = H(\pi_0, g^\alpha, g^\beta, g^{\alpha \beta}, g^{\pi_1 \beta}).$
+
+Compute ${\tt rc} = MAC(h,\, {\tt TAG\_CLIENT} | sid).$
+
+{\tt Authentication-Info: Tcpcrypt rc=<rc hex>} \\
+
+%%%%%%%%%%%%%%%%
+& Compute $g^\alpha = \overbrace{g^\alpha U^{\pi_0}}^{\mathtt{gAUpi0}} V^{-\pi_0}.$
+
+Compute $g^{\pi_1 \beta} = L^\beta.$
+
+Compute $h$.
+
+Compute ${\tt rc}$ and check it against the value sent by $C.$ Continue only if valid.
+
+Compute ${\tt rs} = MAC(h,\, {\tt TAG\_SERVER} | sid).$
+
+{\tt Authentication-Info: Tcpcrypt rs=<rs hex>\textbackslash n\textbackslash n ...content...} \\
+
+%%%%%%%%%%%%%%%%
+Compute ${\tt rs}$ and check it against the value sent by $S.$ If valid, display the page.
+\end{tabular}
+
+
+\end{document}
+
+% Local Variables:
+% tex-main-file: "protocol.tex"
+% tex-dvi-view-command: "evince protocol.pdf"
+% tex-command: "pdflatex protocol.tex"
+% End:
