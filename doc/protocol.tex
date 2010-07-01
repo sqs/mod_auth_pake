@@ -35,29 +35,24 @@ L &= g^{\pi_1}
 {\tt GET /protected} &\\
 
 %%%%%%%%%%%%%%%%
-& {\tt WWW-Authenticate: Tcpcrypt realm="protected area"} \\
-
-%%%%%%%%%%%%%%%%
-Randomly choose $\alpha \in \mathbf{Z}_q.$
-
-Compute $\mathtt{gaUpi0}=g^\alpha U^{\pi_0}.$
-
-{\tt Authorization: Tcpcrypt gaUpi0="<gaUpi0 hex>"} & \\
-%%%%%%%%%%%%%%%%
 & Randomly choose $\beta \in \mathbf{Z}_q.$
 
 Compute $\mathtt{gBVpi0}=g^\beta V^{\pi_0}.$
 
-{\tt Authorization: Tcpcrypt gBVpi0="<gBVpi0 hex>"} \\
+{\tt WWW-Authenticate: Tcpcrypt realm="protected area" gBVpi0="<gBVpi0 hex>"} \\
 
 %%%%%%%%%%%%%%%%
 Compute $g^\beta = \overbrace{g^\beta V^{\pi_0}}^{\mathtt{gBVpi0}} V^{-\pi_0}.$
 
-Compute $h = H(\pi_0, g^\alpha, g^\beta, g^{\alpha \beta}, g^{\pi_1 \beta}).$
+Compute $h = H(\pi_0,\, g^\alpha,\, g^\beta,\, g^{\alpha \beta},\, g^{\pi_1 \beta}).$
 
-Compute ${\tt rc} = MAC(h,\, {\tt TAG\_CLIENT} | sid).$
+Compute ${\tt rc} = \operatorname{MAC}(h,\, {\tt TAG\_CLIENT} | sid).$
 
-{\tt Authentication-Info: Tcpcrypt rc=<rc hex>} \\
+Choose $\alpha \in \mathbf{Z}_q$ at random.
+
+Compute $\mathtt{gaUpi0}=g^\alpha U^{\pi_0}.$
+
+{\tt Authorization: Tcpcrypt gaUpi0="<gaUpi0 hex>" rc=<rc hex>} & \\
 
 %%%%%%%%%%%%%%%%
 & Compute $g^\alpha = \overbrace{g^\alpha U^{\pi_0}}^{\mathtt{gAUpi0}} V^{-\pi_0}.$
@@ -68,9 +63,9 @@ Compute $h$.
 
 Compute ${\tt rc}$ and check it against the value sent by $C.$ Continue only if valid.
 
-Compute ${\tt rs} = MAC(h,\, {\tt TAG\_SERVER} | sid).$
+Compute ${\tt rs} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
 
-{\tt Authentication-Info: Tcpcrypt rs=<rs hex>\textbackslash n\textbackslash n ...content...} \\
+{\tt Authentication-Info: Tcpcrypt rs=<rs hex>\textbackslash n\textbackslash n <response data>} \\
 
 %%%%%%%%%%%%%%%%
 Compute ${\tt rs}$ and check it against the value sent by $S.$ If valid, display the page.
