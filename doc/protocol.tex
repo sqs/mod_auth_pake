@@ -6,26 +6,30 @@
 
 \begin{document}
 
+\begin{center}
+  \textsf{\textbf{\Large HTTP Tcpcrypt Auth}}
+\end{center}
+
 \section{Definitions}
 
-\subsection{Before authentication occurs}
-
-\subsubsection*{Public}
+\subsection*{Public}
 \begin{align*}
 \mathbf{G} &= \textrm{group of prime order $q$ on which CDH is hard}\\
 g &= \textrm{a generator of $\mathbf{G}$} \\
 U,\, V &= \textrm{chosen at random from $\mathbf{G}$} \\
 H_0,\, H_1 &= \textrm{cryptographic hash functions mapping strings to elements of $\mathbf{Z}_q$} \\
 H &= \textrm{hash function mapping to bit strings the size of a MAC key}
-\shortintertext{\subsubsection*{Shared secrets (known to client and server)}}
+\shortintertext{\subsection*{Shared secrets (known to client and server)}}
 \pi_0 &= H_0(\textrm{password}, \textrm{username}, \textrm{server name}) \\
 L &= g^{\pi_1}
-\shortintertext{\subsubsection*{Client-side secret}}
+\shortintertext{\subsection*{Client-side secret}}
 \textrm{password} \\
 \pi_1 &= H_1(\textrm{password}, \textrm{username}, \textrm{server name})
 \end{align*}
 
-\pagebreak
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 \section{Protocol}
 
 \begin{tabular}{p{9cm} | p{9cm}}
@@ -37,9 +41,9 @@ L &= g^{\pi_1}
 %%%%%%%%%%%%%%%%
 & Randomly choose $\beta \in \mathbf{Z}_q.$
 
-Compute $\mathtt{gBVpi0}=g^\beta V^{\pi_0}.$
+Compute $Y=g^\beta V^{\pi_0}.$
 
-{\tt WWW-Authenticate: Tcpcrypt realm="protected area" gBVpi0="<gBVpi0 hex>"} \\
+{\tt WWW-Authenticate: Tcpcrypt realm=<realm> Y=<Y hex>} \\
 
 %%%%%%%%%%%%%%%%
 Compute $g^\beta = \overbrace{g^\beta V^{\pi_0}}^{\mathtt{gBVpi0}} V^{-\pi_0}.$
@@ -50,12 +54,12 @@ Compute ${\tt rc} = \operatorname{MAC}(h,\, {\tt TAG\_CLIENT} | sid).$
 
 Choose $\alpha \in \mathbf{Z}_q$ at random.
 
-Compute $\mathtt{gaUpi0}=g^\alpha U^{\pi_0}.$
+Compute $X=g^\alpha U^{\pi_0}.$
 
-{\tt Authorization: Tcpcrypt gaUpi0="<gaUpi0 hex>" rc=<rc hex>} & \\
+{\tt Authorization: Tcpcrypt X=<X hex> rc=<rc hex> realm=<realm> username=<username>} & \\
 
 %%%%%%%%%%%%%%%%
-& Compute $g^\alpha = \overbrace{g^\alpha U^{\pi_0}}^{\mathtt{gAUpi0}} V^{-\pi_0}.$
+& Compute $g^\alpha = \overbrace{g^\alpha U^{\pi_0}}^{\mathtt{gAUpi0}} U^{-\pi_0}.$
 
 Compute $g^{\pi_1 \beta} = L^\beta.$
 
