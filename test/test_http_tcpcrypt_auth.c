@@ -11,7 +11,7 @@
 /* #include <arpa/inet.h> */
 #include <curl/curl.h>
 #include "tcpcrypt_session.h"
-#include "parser.h"
+#include "header.h"
 #include "http_tcpcrypt_auth.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
@@ -149,21 +149,21 @@ void do_http_request(struct http_request *req, struct http_response *res) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, NULL);
 }
 
-void get_auth_challenge(struct http_request *req, struct http_response *res, struct http_tcpcrypt_auth_chal *chal) {
+void get_auth_hdrlenge(struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
     do_http_request(req, res);
     char *www_auth = header_val(res, "WWW-Authenticate");
 
-    memset(chal, 0, sizeof(struct http_tcpcrypt_auth_chal));
-    parse_auth_chal(chal, www_auth);
+    memset(hdr, 0, sizeof(struct tcpcrypt_http_header));
+    parse_hdr(hdr, www_auth);
 }
 
-void test_auth_challenge(void) {
+void test_auth_hdrlenge(void) {
     struct http_request req;
     struct http_response res;
-    struct http_tcpcrypt_auth_chal chal;
+    struct tcpcrypt_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
-    get_auth_challenge(&req, &res, &chal);
+    get_auth_hdrlenge(&req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
     char *www_auth = header_val(&res, "WWW-Authenticate");
@@ -171,26 +171,24 @@ void test_auth_challenge(void) {
     TEST_ASSERT(www_auth != NULL);
     TEST_ASSERT(strstr(www_auth, " Tcpcrypt ") == www_auth);
 
-    if (detailed) inspect_auth_chal(&chal);
-    TEST_ASSERT(chal.auth_name && strcmp(chal.auth_name, "Tcpcrypt") == 0);
-    TEST_ASSERT(chal.realm && strcmp(chal.realm, "protected area") == 0);
-    TEST_ASSERT(chal.domain && strcmp(chal.domain, "/protected/ http://localhost:8080/protected/") == 0);
-    TEST_ASSERT(chal.nonce && strlen(chal.nonce) == 52);
+    if (detailed) inspect_hdr(&hdr);
+    TEST_ASSERT(hdr.auth_name && strcmp(hdr.auth_name, "Tcpcrypt") == 0);
+    TEST_ASSERT(hdr.realm && strcmp(hdr.realm, "protected area") == 0);
 }
 
-void make_auth_hdr(char *hdr, struct http_tcpcrypt_auth_chal *chal) {
+void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *hdr) {
     char ha1[33];
     make_ha1(ha1, TEST_USER1, TEST_REALM1, TEST_PW1);
     ha1[32] = '\0';
     char resp[33];
-    make_response(resp, ha1, chal->nonce, tcpcrypt_get_sid());
+    ///make_response(resp, ha1, hdr->nonce, tcpcrypt_get_sid()); REDO for EC
     resp[32] = '\0';
 
     /* construct Authorization header */
-    sprintf(hdr,
+    sprintf(header_line,
             "Authorization: Tcpcrypt username=\"%s\", " \
-            "realm=\"%s\", nonce=\"%s\", uri=\"%s\", response=\"%s\"",
-            TEST_USER1, TEST_REALM1, chal->nonce, TEST_PROTECTED_URL, resp);
+            "realm=\"%s\", gaUpi0=\"%s\", rc=\"%s\"",
+            TEST_USER1, TEST_REALM1, hdr->gaUpi0, hdr->rc);
  
 }
 
@@ -216,14 +214,14 @@ void parse_auth_info_rspauth(char *rspauth, char *auth_info) {
 void test_auth_info(void) {
     struct http_request req;
     struct http_response res;
-    struct http_tcpcrypt_auth_chal chal;
+    struct tcpcrypt_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
-    get_auth_challenge(&req, &res, &chal);
+    get_auth_hdrlenge(&req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
     char auth_hdr[1000];
-    make_auth_hdr(auth_hdr, &chal);
+    make_auth_hdr(auth_hdr, &hdr);
     set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
@@ -239,7 +237,7 @@ void test_auth_info(void) {
     char ha1[33];
     make_ha1(ha1, "jsmith", "protected area", "jsmith");
     ha1[32] = '\0';
-    make_response(exp_rspauth, ha1, chal.nonce, tcpcrypt_get_sid());
+    ///make_response(exp_rspauth, ha1, hdr.nonce, tcpcrypt_get_sid()); REDO for EC
 
     TEST_ASSERT(strcmp(exp_rspauth, rspauth) == 0);
 }
@@ -247,16 +245,16 @@ void test_auth_info(void) {
 void test_authenticates_first_time(void) {
     struct http_request req;
     struct http_response res;
-    struct http_tcpcrypt_auth_chal chal;
+    struct tcpcrypt_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
-    get_auth_challenge(&req, &res, &chal);
+    get_auth_hdrlenge(&req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
-    if (detailed) inspect_auth_chal(&chal);
+    if (detailed) inspect_hdr(&hdr);
 
     char auth_hdr[1000];
-    make_auth_hdr(auth_hdr, &chal);
+    make_auth_hdr(auth_hdr, &hdr);
     set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
@@ -291,7 +289,7 @@ void test_make_response(void) {
 static struct test _tests[] = {
     { test_authenticates_first_time, "authsingle"},
     { test_gets_root_unauthenticated, "noauth"},
-    { test_auth_challenge, "chal"},
+    { test_auth_hdrlenge, "hdr"},
     { test_auth_info, "auth_info" },
     { test_make_ha1, "make_ha1"},
     { test_make_response, "make_response" },
