@@ -20,8 +20,8 @@ void test_pake() {
     ps.server_state.client_X = pc.client_state.X;
     pc.client_state.server_Y = ps.server_state.Y;
     
-    assert(pake_compute_k(&ps, ctx));
-    assert(pake_compute_k(&pc, ctx));
+    assert(pake_compute_h(&ps, ctx));
+    assert(pake_compute_h(&pc, ctx));
 
     debug_point(ps.public.G, "server N", ps.shared.N, ctx);
     debug_point(pc.public.G, "client N", pc.shared.N, ctx);
@@ -31,8 +31,8 @@ void test_pake() {
     assert(EC_POINT_cmp(ps.public.G, ps.shared.N, pc.shared.N, ctx) == 0);
     assert(EC_POINT_cmp(ps.public.G, ps.shared.Z, pc.shared.Z, ctx) == 0);
 
-    assert(ps.shared.k[0] && pc.shared.k[0]);
-    assert(strcmp((char *)ps.shared.k, (char *)pc.shared.k) == 0);
+    assert(ps.shared.h[0] && pc.shared.h[0]);
+    assert(strcmp((char *)ps.shared.h, (char *)pc.shared.h) == 0);
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);

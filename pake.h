@@ -26,10 +26,10 @@ struct pake_shared_info {
     EC_POINT *N; /* = (Y/V^{\pi_0})^{\pi_1} = L^\beta */
     EC_POINT *Z; /* = (Y/V^{\pi_0})^\alpha = (X/U^{\pi_0})^\beta */
 
-    unsigned char k[SHA256_DIGEST_LENGTH]; /* = H(\pi_0, X, Y, Z, N) */
+    unsigned char h[SHA256_DIGEST_LENGTH]; /* = H(\pi_0, X, Y, Z, N) */
 
-    unsigned char rc[SHA256_DIGEST_LENGTH]; /* = H(k, TAG_CLIENT | sid) */
-    unsigned char rs[SHA256_DIGEST_LENGTH]; /* = H(k, TAG_SERVER | sid) */
+    unsigned char respc[SHA256_DIGEST_LENGTH]; /* = H(h, TAG_CLIENT | sid) */
+    unsigned char resps[SHA256_DIGEST_LENGTH]; /* = H(h, TAG_SERVER | sid) */
 };
 
 struct pake_client_info {
@@ -69,10 +69,10 @@ int pake_client_init(struct pake_info *p, BN_CTX *ctx);
 int pake_server_init_state(struct pake_info *p, BN_CTX *ctx);
 int pake_client_init_state(struct pake_info *p, BN_CTX *ctx);
 
-int pake_compute_k(struct pake_info *p, BN_CTX *ctx);
+int pake_compute_h(struct pake_info *p, BN_CTX *ctx);
 
-int tcpcrypt_pake_compute_rs(struct pake_info *p, BN_CTX *ctx);
-int tcpcrypt_pake_compute_rc(struct pake_info *p, BN_CTX *ctx);
+int tcpcrypt_pake_compute_resps(struct pake_info *p, BN_CTX *ctx);
+int tcpcrypt_pake_compute_respc(struct pake_info *p, BN_CTX *ctx);
 
 void debug_pake_info(const struct pake_info *p);
 void debug_bignum(BIGNUM *bn);

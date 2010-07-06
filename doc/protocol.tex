@@ -45,34 +45,34 @@ Compute $Y=g^\beta V^{\pi_0}.$
 
 {\tt WWW-Authenticate: Tcpcrypt realm=<realm> Y=<Y hex>} \\
 
-%%%%%%%%%%%%%%%%
-Compute $g^\beta = \overbrace{g^\beta V^{\pi_0}}^{\mathtt{gBVpi0}} V^{-\pi_0}.$
+%%%%%%%%%%%%%%%
+Choose $\alpha \in \mathbf{Z}_q$ at random.
+
+Compute $g^\beta = g^\beta V^{\pi_0} V^{-\pi_0}.$
 
 Compute $h = H(\pi_0,\, g^\alpha,\, g^\beta,\, g^{\alpha \beta},\, g^{\pi_1 \beta}).$
 
-Compute ${\tt rc} = \operatorname{MAC}(h,\, {\tt TAG\_CLIENT} | sid).$
-
-Choose $\alpha \in \mathbf{Z}_q$ at random.
+Compute ${\tt respc} = \operatorname{MAC}(h,\, {\tt TAG\_CLIENT} | sid).$
 
 Compute $X=g^\alpha U^{\pi_0}.$
 
-{\tt Authorization: Tcpcrypt X=<X hex> rc=<rc hex> realm=<realm> username=<username>} & \\
+{\tt Authorization: Tcpcrypt X=<X hex> respc=<respc hex> realm=<realm> username=<username>} & \\
 
 %%%%%%%%%%%%%%%%
-& Compute $g^\alpha = \overbrace{g^\alpha U^{\pi_0}}^{\mathtt{gAUpi0}} U^{-\pi_0}.$
+& Compute $g^\alpha = g^\alpha U^{\pi_0} U^{-\pi_0}.$
 
 Compute $g^{\pi_1 \beta} = L^\beta.$
 
 Compute $h$.
 
-Compute ${\tt rc}$ and check it against the value sent by $C.$ Continue only if valid.
+Compute ${\tt respc}$ and check it against the value sent by $C.$ Continue only if valid.
 
-Compute ${\tt rs} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
+Compute ${\tt resps} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
 
-{\tt Authentication-Info: Tcpcrypt rs=<rs hex>\textbackslash n\textbackslash n <response data>} \\
+{\tt Authentication-Info: Tcpcrypt resps=<resps hex>\textbackslash n\textbackslash n <response data>} \\
 
 %%%%%%%%%%%%%%%%
-Compute ${\tt rs}$ and check it against the value sent by $S.$ If valid, display the page.
+Compute ${\tt resps}$ and check it against the value sent by $S.$ If valid, display the page.
 \end{tabular}
 
 

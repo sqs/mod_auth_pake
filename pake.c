@@ -314,8 +314,8 @@ int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
     return ret;    
 }
 
-/* Compute $k = H(\pi_0, X, Y, Z, N).$ */
-int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
+/* Compute $h = H(\pi_0, X, Y, Z, N).$ */
+int pake_compute_h(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
     BIGNUM *P_x = NULL, *P_y = NULL;
     SHA256_CTX sha;
@@ -333,7 +333,7 @@ int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
         if (!pake_client_compute_N_Z(p, ctx)) goto err;
     }
 
-    /* Now we can compute $k = SHA256(\pi_0, X, Y, Z, N).$ */
+    /* Now we can compute $h = SHA256(\pi_0, X, Y, Z, N).$ */
     if (!hash_bn(&sha, p->shared.pi_0)) goto err;
     if (!hash_point(&sha, p->public.G, 
                     p->isclient ? p->client_state.X : p->server_state.client_X,
@@ -343,7 +343,7 @@ int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
                     P_x, P_y, ctx)) goto err;
     if (!hash_point(&sha, p->public.G, p->shared.Z, P_x, P_y, ctx)) goto err;
     if (!hash_point(&sha, p->public.G, p->shared.N, P_x, P_y, ctx)) goto err;    
-    if (!SHA256_Final(p->shared.k, &sha)) goto err;
+    if (!SHA256_Final(p->shared.h, &sha)) goto err;
     
     ret = 1;
 
@@ -356,19 +356,23 @@ int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
     return ret;
 }
 
-int tcpcrypt_pake_compute_rs(struct pake_info *p, BN_CTX *ctx) {
+int tcpcrypt_pake_compute_resps(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     ret = 1;
+
+    goto err;
 
  err:
     return ret;
 }
 
-int tcpcrypt_pake_compute_rc(struct pake_info *p, BN_CTX *ctx) {
+int tcpcrypt_pake_compute_respc(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     ret = 1;
+
+    goto err;
 
  err:
     return ret;
