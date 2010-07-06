@@ -5,7 +5,6 @@
 #include <string.h>
 #include <strings.h>
 #include <alloca.h>
-#include <openssl/sha.h>
 #include <openssl/obj_mac.h>
 
 static int pake_init_shared(struct pake_info *p, BN_CTX *ctx);
@@ -14,12 +13,23 @@ static int pake_init_public(struct pake_info *p, BN_CTX *ctx);
 static int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 static int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 
-static int hash_bn(SHA256_CTX *sha, const BIGNUM *x);
 static int get_affine_coordinates(const EC_GROUP *G,
                            const EC_POINT *P,
                            BIGNUM *x,
                            BIGNUM *y,
                            BN_CTX *ctx);
+/*** static int set_affine_coordinates(const EC_GROUP *G,
+                           EC_POINT *P,
+                           const BIGNUM *x,
+                           const BIGNUM *y,
+                           BN_CTX *ctx); ***/
+static int hash_bn(SHA256_CTX *sha, const BIGNUM *x);
+static int hash_point(SHA256_CTX *sha,
+               const EC_GROUP *G,
+               const EC_POINT *P,
+               BIGNUM *P_x,
+               BIGNUM *P_y,
+               BN_CTX *ctx);
 
 int pake_server_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
@@ -307,18 +317,40 @@ int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
 /* Compute $k = H(\pi_0, X, Y, Z, N).$ */
 int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
+    BIGNUM *P_x = NULL, *P_y = NULL;
+    SHA256_CTX sha;
 
-    p->shared.N = EC_POINT_new(p->public.G);
-    p->shared.Z = EC_POINT_new(p->public.G);
+    if (!(p->shared.N = EC_POINT_new(p->public.G))) goto err;
+    if (!(p->shared.Z = EC_POINT_new(p->public.G))) goto err;
+    if (!(P_x = BN_new())) goto err;
+    if (!(P_y = BN_new())) goto err;
+    if (!SHA256_Init(&sha)) goto err;
 
+    /* First, compute N and Z. */
     if (p->isserver) {
         if (!pake_server_compute_N_Z(p, ctx)) goto err;
     } else {
         if (!pake_client_compute_N_Z(p, ctx)) goto err;
     }
+
+    /* Now we can compute $k = SHA256(\pi_0, X, Y, Z, N).$ */
+    if (!hash_bn(&sha, p->shared.pi_0)) goto err;
+    if (!hash_point(&sha, p->public.G, 
+                    p->isclient ? p->client_state.X : p->server_state.client_X,
+                    P_x, P_y, ctx)) goto err;
+    if (!hash_point(&sha, p->public.G, 
+                    p->isserver ? p->server_state.Y : p->client_state.server_Y,
+                    P_x, P_y, ctx)) goto err;
+    if (!hash_point(&sha, p->public.G, p->shared.Z, P_x, P_y, ctx)) goto err;
+    if (!hash_point(&sha, p->public.G, p->shared.N, P_x, P_y, ctx)) goto err;    
+    if (!SHA256_Final(p->shared.k, &sha)) goto err;
     
     ret = 1;
  err:
+    if (P_x) BN_clear_free(P_x);
+    if (P_y) BN_clear_free(P_y);
+
+    bzero(&sha, sizeof(sha));
 
     return ret;
 }
@@ -413,7 +445,7 @@ void debug_point(const EC_GROUP *G,
   if (y) BN_clear_free(y);
 }
 
-int get_affine_coordinates(const EC_GROUP *G,
+static int get_affine_coordinates(const EC_GROUP *G,
                            const EC_POINT *P,
                            BIGNUM *x,
                            BIGNUM *y,
@@ -426,7 +458,20 @@ int get_affine_coordinates(const EC_GROUP *G,
   }
 }
 
-int hash_bn(SHA256_CTX *sha, const BIGNUM *x) {
+/*** static int set_affine_coordinates(const EC_GROUP *G,
+                           EC_POINT *P,
+                           const BIGNUM *x,
+                           const BIGNUM *y,
+                           BN_CTX *ctx) {
+  if (EC_METHOD_get_field_type(EC_GROUP_method_of(G))
+      == NID_X9_62_prime_field) {
+    return EC_POINT_set_affine_coordinates_GFp (G, P, x, y, ctx);
+  } else { * NID_X9_62_characteristic_two_field *
+    return EC_POINT_set_affine_coordinates_GF2m(G, P, x, y, ctx);
+  }
+} ***/
+
+static int hash_bn(SHA256_CTX *sha, const BIGNUM *x) {
   /* allocate space */
   int size = BN_num_bytes(x), ret = 0;
   if (size <= 0 || size >= 256) return 0;
@@ -441,5 +486,17 @@ int hash_bn(SHA256_CTX *sha, const BIGNUM *x) {
 
  err:
   bzero(tmp, size+1);
+  return ret;
+}
+
+static int hash_point(SHA256_CTX *sha,
+               const EC_GROUP *G,
+               const EC_POINT *P,
+               BIGNUM *P_x,
+               BIGNUM *P_y,
+               BN_CTX *ctx) {
+  int ret = get_affine_coordinates(G, P, P_x, P_y, ctx);
+  if (ret) ret = hash_bn(sha, P_x);
+  if (ret) ret = hash_bn(sha, P_y);
   return ret;
 }

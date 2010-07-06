@@ -31,6 +31,8 @@ void test_pake() {
     assert(EC_POINT_cmp(ps.public.G, ps.shared.N, pc.shared.N, ctx) == 0);
     assert(EC_POINT_cmp(ps.public.G, ps.shared.Z, pc.shared.Z, ctx) == 0);
 
+    assert(ps.shared.k[0] && pc.shared.k[0]);
+    assert(strcmp((char *)ps.shared.k, (char *)pc.shared.k) == 0);
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);

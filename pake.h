@@ -3,6 +3,7 @@
 
 #include <openssl/bn.h>
 #include <openssl/ec.h>
+#include <openssl/sha.h>
 
 struct pake_public_info {
     EC_GROUP *G;
@@ -25,7 +26,7 @@ struct pake_shared_info {
     EC_POINT *N; /* = (Y/V^{\pi_0})^{\pi_1} = L^\beta */
     EC_POINT *Z; /* = (Y/V^{\pi_0})^\alpha = (X/U^{\pi_0})^\beta */
 
-    BIGNUM *k; /* = H(\pi_0, X, Y, Z, N) */
+    unsigned char k[SHA256_DIGEST_LENGTH]; /* = H(\pi_0, X, Y, Z, N) */
 };
 
 struct pake_client_info {
