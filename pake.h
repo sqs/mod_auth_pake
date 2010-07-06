@@ -68,5 +68,7 @@ int pake_client_init_state(struct pake_info *p, BN_CTX *ctx);
 int pake_compute_k(struct pake_info *p, BN_CTX *ctx);
 
 void debug_pake_info(const struct pake_info *p);
+void debug_bignum(BIGNUM *bn);
+void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);
 
 #endif // TCPCRYPT_PAKE_H

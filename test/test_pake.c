@@ -4,35 +4,27 @@
 #include <assert.h>
 #include <openssl/bn.h>
 
-void test_pake_server() {
-    struct pake_info p;
+void test_pake() {
+    struct pake_info ps, pc;
     BN_CTX *ctx = NULL;
 
-    memset(&p, 0, sizeof(p));
+    memset(&ps, 0, sizeof(ps));
+    memset(&pc, 0, sizeof(pc));
     assert(ctx = BN_CTX_new());
     BN_CTX_start(ctx);
 
-    pake_server_init(&p, ctx);
-    pake_client_init_state(&p, ctx);
-    assert(pake_compute_k(&p, ctx));
+    assert(pake_server_init(&ps, ctx));
+    assert(pake_client_init(&pc, ctx));
 
-    BN_CTX_end(ctx);
-    BN_CTX_free(ctx);
-}
+    /* TODO: HACK: fake client-server interaction */
+    ps.server_state.client_X = pc.client_state.X;
+    pc.client_state.server_Y = ps.server_state.Y;
+    
+    assert(pake_compute_k(&ps, ctx));
+    assert(pake_compute_k(&pc, ctx));
 
-void test_pake_client() {
-    struct pake_info p;
-    BN_CTX *ctx = NULL;
-
-    memset(&p, 0, sizeof(p));
-    assert(ctx = BN_CTX_new());
-    BN_CTX_start(ctx);
-
-    memset(&p, 0, sizeof(p));
-
-    pake_client_init(&p, ctx);
-    pake_server_init_state(&p, ctx);
-    assert(pake_compute_k(&p, ctx));
+    debug_point(ps.public.G, "server N", ps.shared.N, ctx);
+    debug_point(pc.public.G, "client N", pc.shared.N, ctx);
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);

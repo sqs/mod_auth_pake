@@ -14,9 +14,6 @@ static int pake_init_public(struct pake_info *p, BN_CTX *ctx);
 static int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 static int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 
-static void debug_bignum(BIGNUM *bn);
-static void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);
-
 static int hash_bn(SHA256_CTX *sha, const BIGNUM *x);
 static int get_affine_coordinates(const EC_GROUP *G,
                            const EC_POINT *P,
@@ -240,7 +237,7 @@ int pake_client_init_state(struct pake_info *p, BN_CTX *ctx) {
     if (!SHA256_Init(&sha)) goto err;
     if (!hash_bn(&sha, p->shared.pi_0)) goto err;
     
-    /* choose beta */
+    /* choose alpha */
     do {
         if (!BN_rand_range(p->client_state.alpha, order)) goto err;
     } while (BN_is_zero(p->client_state.alpha));
@@ -268,9 +265,6 @@ int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
 
     if (!(X2 = EC_POINT_new(p->public.G))) goto err;
 
-    /* TODO: HACK: copy client X */
-    p->server_state.client_X = p->client_state.X;
-
     /* Compute $N = L^\beta.$ */
     if (!EC_POINT_mul(p->public.G, p->shared.N, NULL, p->shared.L, p->server_state.beta, ctx)) goto err;
 
@@ -292,9 +286,6 @@ int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
     EC_POINT *Y2 = NULL;
 
     if (!(Y2 = EC_POINT_new(p->public.G))) goto err;
-
-    /* TODO: HACK: copy server Y */
-    p->client_state.server_Y = p->server_state.Y;
 
     /* Compute $Y2 = Y/V^{\pi_0}.$ */
     if (!EC_POINT_add(p->public.G, Y2, p->client_state.server_Y, p->shared.V_minus_pi_0, ctx)) goto err;
