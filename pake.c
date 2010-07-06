@@ -4,12 +4,17 @@
 #include <stdio.h>
 #include <string.h>
 #include <strings.h>
+#include <alloca.h>
 #include <openssl/sha.h>
 #include <openssl/obj_mac.h>
 
-static int pake_init(struct pake_info *p);
-static int pake_init_server_state(struct pake_info *p);
-static int pake_init_client_state(struct pake_info *p);
+static int pake_init_shared(struct pake_info *p);
+static int pake_init_public(struct pake_info *p);
+static int pake_server_init_state(struct pake_info *p);
+static int pake_client_init_state(struct pake_info *p);
+
+static int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
+static int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 
 static void debug_bignum(BIGNUM *bn);
 static void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);
@@ -21,14 +26,14 @@ static int get_affine_coordinates(const EC_GROUP *G,
                            BIGNUM *y,
                            BN_CTX *ctx);
 
-int pake_init_server(struct pake_info *p) {
+int pake_server_init(struct pake_info *p) {
     int ret = 0;
 
     p->isserver = 1;
 
     if (!pake_init_public(p)) goto err;
     if (!pake_init_shared(p)) goto err;
-    if (!pake_init_server_state(p)) goto err;
+    if (!pake_server_init_state(p)) goto err;
 
     ret = 1;
 
@@ -36,14 +41,14 @@ int pake_init_server(struct pake_info *p) {
     return ret;
 }
 
-int pake_init_client(struct pake_info *p) {
+int pake_client_init(struct pake_info *p) {
     int ret = 0;
 
     p->isclient = 1;    
 
     if (!pake_init_public(p)) goto err;
     if (!pake_init_shared(p)) goto err;
-    if (!pake_init_client_state (p)) goto err;
+    if (!pake_client_init_state (p)) goto err;
 
     ret = 1;
 
@@ -194,7 +199,7 @@ int pake_init_shared(struct pake_info *p) {
 
 /* Choose $\beta \in \mathbf{Z}_q$ at random, and compute $Y = g^\beta
    V^{\pi_0}.$ */
-int pake_init_server_state(struct pake_info *p) {
+int pake_server_init_state(struct pake_info *p) {
     int ret = 0;
     BN_CTX *ctx = NULL;
     BIGNUM *order = NULL;
@@ -236,7 +241,7 @@ int pake_init_server_state(struct pake_info *p) {
 
 /* Choose $\beta in \mathbf{Z}_q$ at random, and compute $X=g^\alpha
    U^{\pi_0}.$ */
-int pake_init_client_state(struct pake_info *p) {
+int pake_client_init_state(struct pake_info *p) {
     int ret = 0;
     BN_CTX *ctx = NULL;
     BIGNUM *order = NULL;
@@ -272,6 +277,68 @@ int pake_init_client_state(struct pake_info *p) {
     if (order) BN_free(order);
     /* others already free */
     bzero(&sha, sizeof(sha));
+
+    return ret;
+}
+
+/* Compute $N = L^\beta$ and $Z = (X/U^{\pi_0})^\beta.$ */
+int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
+    int ret = 0;
+    EC_POINT *X2 = NULL;
+
+    if (!(X2 = EC_POINT_new(p->public.G))) goto err;
+
+    /* Compute $N = L^\beta.$ */
+    if (!EC_POINT_mul(p->public.G, p->shared.N, NULL, p->shared.L, p->server_state.beta, ctx)) goto err;
+
+    /* Compute $Z = (X/U^{\pi_0})^\beta.$ */
+    if (!EC_POINT_add(p->public.G, X2, p->server_state.client_X, p->shared.U_minus_pi_0, ctx)) goto err;
+    if (!EC_POINT_mul(p->public.G, p->shared.Z, NULL, X2, p->server_state.beta, ctx)) goto err;
+    
+    ret = 1;
+
+ err:
+    if (X2) EC_POINT_clear_free(X2); /* TODO: necessary? */
+
+    return ret;
+}
+
+/* Compute $N = (Y/V^{\pi_0})^{\pi_1}$ and $Z = (Y/V^{\pi_0})^{\pi_1}.$ */
+int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
+    int ret = 0;
+    EC_POINT *Y2 = NULL;
+
+    if (!(Y2 = EC_POINT_new(p->public.G))) goto err;
+
+    /* Compute $Y2 = Y/V^{\pi_0}.$ */
+    if (!EC_POINT_add(p->public.G, Y2, p->client_state.server_Y, p->shared.V_minus_pi_0, ctx)) goto err;
+
+    /* Compute $N = (Y/V^{\pi_0})^{\pi_1} = Y2^{\pi_1}.$ */
+    if (!EC_POINT_mul(p->public.G, p->shared.N, NULL, Y2, p->client.pi_1, ctx)) goto err;
+
+    /* Compute $Z = (Y/V^{\pi_0})^\alpha = Y2^\alpha.$ */
+    if (!EC_POINT_mul(p->public.G, p->shared.Z, NULL, Y2, p->client_state.alpha, ctx)) goto err;
+    
+    ret = 1;
+
+ err:
+    if (Y2) EC_POINT_clear_free(Y2); /* TODO: necessary? */
+
+    return ret;    
+}
+
+/* Compute $k = H(\pi_0, X, Y, Z, N).$ */
+int pake_compute_k(struct pake_info *p) {
+    int ret = 0;
+
+    if (p->isserver) {
+        if (!pake_server_compute_N_Z(p, NULL)) goto err;
+    } else {
+        if (!pake_client_compute_N_Z(p, NULL)) goto err;
+    }
+    
+    ret = 1;
+ err:
 
     return ret;
 }
@@ -340,6 +407,9 @@ void debug_point(const EC_GROUP *G,
   if (!P) goto err;
   if (!x || !y) goto err;
   if (!get_affine_coordinates(G, P, x, y, ctx)) goto err;
+
+  sx = BN_num_bytes(x);
+  sy = BN_num_bytes(y);
   
   if (strlen(message)) {
       printf("*** %s: ", message);

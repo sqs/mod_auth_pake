@@ -281,8 +281,8 @@ void test_make_response(void) {
 }
 
 static struct test _tests[] = {
-    { test_pake_init_server, "test_pake_init_server" },
-    { test_pake_init_client, "test_pake_init_client" },
+    { test_pake_server, "test_pake_server" },
+    { test_pake_client, "test_pake_client" },
     { test_authenticates_first_time, "authsingle"},
     { test_gets_root_unauthenticated, "noauth"},
     { test_auth_hdrlenge, "hdr"},

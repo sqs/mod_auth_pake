@@ -21,6 +21,11 @@ struct pake_shared_info {
     EC_POINT *U_pi_0;
     EC_POINT *V_minus_pi_0;
     EC_POINT *U_minus_pi_0;
+
+    EC_POINT *N; /* = (Y/V^{\pi_0})^{\pi_1} = L^\beta */
+    EC_POINT *Z; /* = (Y/V^{\pi_0})^\alpha = (X/U^{\pi_0})^\beta */
+
+    BIGNUM *k; /* = H(\pi_0, X, Y, Z, N) */
 };
 
 struct pake_client_info {
@@ -31,11 +36,17 @@ struct pake_client_info {
 struct pake_client_state {
     BIGNUM *alpha;
     EC_POINT *X;
+
+    /* recvd from server */
+    EC_POINT *server_Y;
 };
 
 struct pake_server_state {
     BIGNUM *beta;
     EC_POINT *Y;
+
+    /* recvd from client */
+    EC_POINT *client_X;
 };
 
 struct pake_info {
@@ -48,8 +59,10 @@ struct pake_info {
     int isserver;
 };
 
-int pake_init_server(struct pake_info *p);
-int pake_init_client(struct pake_info *p);
+int pake_server_init(struct pake_info *p);
+int pake_client_init(struct pake_info *p);
+
+int pake_compute_k(struct pake_info *p);
 
 void debug_pake_info(const struct pake_info *p);
 
