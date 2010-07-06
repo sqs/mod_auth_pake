@@ -59,10 +59,13 @@ struct pake_info {
     int isserver;
 };
 
-int pake_server_init(struct pake_info *p);
-int pake_client_init(struct pake_info *p);
+int pake_server_init(struct pake_info *p, BN_CTX *ctx);
+int pake_client_init(struct pake_info *p, BN_CTX *ctx);
 
-int pake_compute_k(struct pake_info *p);
+int pake_server_init_state(struct pake_info *p, BN_CTX *ctx);
+int pake_client_init_state(struct pake_info *p, BN_CTX *ctx);
+
+int pake_compute_k(struct pake_info *p, BN_CTX *ctx);
 
 void debug_pake_info(const struct pake_info *p);
 

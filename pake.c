@@ -8,10 +8,8 @@
 #include <openssl/sha.h>
 #include <openssl/obj_mac.h>
 
-static int pake_init_shared(struct pake_info *p);
-static int pake_init_public(struct pake_info *p);
-static int pake_server_init_state(struct pake_info *p);
-static int pake_client_init_state(struct pake_info *p);
+static int pake_init_shared(struct pake_info *p, BN_CTX *ctx);
+static int pake_init_public(struct pake_info *p, BN_CTX *ctx);
 
 static int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 static int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
@@ -26,14 +24,14 @@ static int get_affine_coordinates(const EC_GROUP *G,
                            BIGNUM *y,
                            BN_CTX *ctx);
 
-int pake_server_init(struct pake_info *p) {
+int pake_server_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     p->isserver = 1;
 
-    if (!pake_init_public(p)) goto err;
-    if (!pake_init_shared(p)) goto err;
-    if (!pake_server_init_state(p)) goto err;
+    if (!pake_init_public(p, ctx)) goto err;
+    if (!pake_init_shared(p, ctx)) goto err;
+    if (!pake_server_init_state(p, ctx)) goto err;
 
     ret = 1;
 
@@ -41,14 +39,14 @@ int pake_server_init(struct pake_info *p) {
     return ret;
 }
 
-int pake_client_init(struct pake_info *p) {
+int pake_client_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     p->isclient = 1;    
 
-    if (!pake_init_public(p)) goto err;
-    if (!pake_init_shared(p)) goto err;
-    if (!pake_client_init_state (p)) goto err;
+    if (!pake_init_public(p, ctx)) goto err;
+    if (!pake_init_shared(p, ctx)) goto err;
+    if (!pake_client_init_state(p, ctx)) goto err;
 
     ret = 1;
 
@@ -57,9 +55,8 @@ int pake_client_init(struct pake_info *p) {
 }
 
 /* Set $G,$ $U,$ and $V.$ */
-int pake_init_public(struct pake_info *p) {
+int pake_init_public(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
-    BN_CTX *ctx = NULL;
     BIGNUM *tmp = NULL, *order = NULL;
 
     p->public.G = NULL;
@@ -69,8 +66,6 @@ int pake_init_public(struct pake_info *p) {
     p->public.realm = "protected area";
     p->client.password = "jsmith"; /* TODO: shouldn't need to set this in init_public */
 
-    if (!(ctx = BN_CTX_new())) goto err;
-    BN_CTX_start(ctx);
     tmp = BN_new();
     order = BN_new();
     if (!tmp || !order) goto err;
@@ -107,16 +102,13 @@ int pake_init_public(struct pake_info *p) {
 
 /* Set $pi_0,$ and $L.$ Precompute $V^{\pi_0},$ $U^{\pi_0},$
    $V^{-\pi_0},$ and $U^{-\pi_0}.$ */
-int pake_init_shared(struct pake_info *p) {
+int pake_init_shared(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
     unsigned char H = 0;
     SHA512_CTX sha;
     unsigned char md[SHA512_DIGEST_LENGTH];
-    BN_CTX *ctx = NULL;
     BIGNUM *tmp = NULL, *order = NULL;
 
-    if (!(ctx = BN_CTX_new())) goto err;
-    BN_CTX_start(ctx);
     order = BN_new();
     tmp = BN_new();
     if (!order || !tmp) goto err;
@@ -189,25 +181,18 @@ int pake_init_shared(struct pake_info *p) {
 
     if (order) BN_free(order);
     if (tmp) BN_clear_free(tmp);
-    if (ctx) {
-        BN_CTX_end(ctx);
-        BN_CTX_free(ctx);
-    }
 
     return ret;
 }
 
 /* Choose $\beta \in \mathbf{Z}_q$ at random, and compute $Y = g^\beta
    V^{\pi_0}.$ */
-int pake_server_init_state(struct pake_info *p) {
+int pake_server_init_state(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
-    BN_CTX *ctx = NULL;
     BIGNUM *order = NULL;
     EC_POINT *Y2 = NULL;
     SHA256_CTX sha;
 
-    if (!(ctx = BN_CTX_new())) goto err;
-    BN_CTX_start(ctx);
     order = BN_new();
     p->server_state.beta = BN_new();
     p->server_state.Y = EC_POINT_new(p->public.G);
@@ -231,7 +216,6 @@ int pake_server_init_state(struct pake_info *p) {
     ret = 1;
 
  err:
-    if (ctx) { BN_CTX_end(ctx); BN_CTX_free(ctx); }
     if (order) BN_free(order);
     /* others already free */
     bzero(&sha, sizeof(sha));
@@ -241,15 +225,12 @@ int pake_server_init_state(struct pake_info *p) {
 
 /* Choose $\beta in \mathbf{Z}_q$ at random, and compute $X=g^\alpha
    U^{\pi_0}.$ */
-int pake_client_init_state(struct pake_info *p) {
+int pake_client_init_state(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
-    BN_CTX *ctx = NULL;
     BIGNUM *order = NULL;
     EC_POINT *X2 = NULL;
     SHA256_CTX sha;
 
-    if (!(ctx = BN_CTX_new())) goto err;
-    BN_CTX_start(ctx);
     order = BN_new();
     p->client_state.alpha = BN_new();
     p->client_state.X = EC_POINT_new(p->public.G);
@@ -273,7 +254,6 @@ int pake_client_init_state(struct pake_info *p) {
     ret = 1;
 
  err:
-    if (ctx) { BN_CTX_end(ctx); BN_CTX_free(ctx); }
     if (order) BN_free(order);
     /* others already free */
     bzero(&sha, sizeof(sha));
@@ -287,6 +267,9 @@ int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
     EC_POINT *X2 = NULL;
 
     if (!(X2 = EC_POINT_new(p->public.G))) goto err;
+
+    /* TODO: HACK: copy client X */
+    p->server_state.client_X = p->client_state.X;
 
     /* Compute $N = L^\beta.$ */
     if (!EC_POINT_mul(p->public.G, p->shared.N, NULL, p->shared.L, p->server_state.beta, ctx)) goto err;
@@ -310,6 +293,9 @@ int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
 
     if (!(Y2 = EC_POINT_new(p->public.G))) goto err;
 
+    /* TODO: HACK: copy server Y */
+    p->client_state.server_Y = p->server_state.Y;
+
     /* Compute $Y2 = Y/V^{\pi_0}.$ */
     if (!EC_POINT_add(p->public.G, Y2, p->client_state.server_Y, p->shared.V_minus_pi_0, ctx)) goto err;
 
@@ -328,13 +314,16 @@ int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
 }
 
 /* Compute $k = H(\pi_0, X, Y, Z, N).$ */
-int pake_compute_k(struct pake_info *p) {
+int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
+    p->shared.N = EC_POINT_new(p->public.G);
+    p->shared.Z = EC_POINT_new(p->public.G);
+
     if (p->isserver) {
-        if (!pake_server_compute_N_Z(p, NULL)) goto err;
+        if (!pake_server_compute_N_Z(p, ctx)) goto err;
     } else {
-        if (!pake_client_compute_N_Z(p, NULL)) goto err;
+        if (!pake_client_compute_N_Z(p, ctx)) goto err;
     }
     
     ret = 1;
