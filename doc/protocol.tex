@@ -1,5 +1,6 @@
-\documentclass[12pt]{article}
+\documentclass[10pt]{article}
 \usepackage{savetrees}
+%\usepackage{times}
 \usepackage{amsmath}
 \usepackage{multirow}
 \usepackage{mathtools} % shortintertext
@@ -8,22 +9,26 @@
 
 \begin{center}
   \textsf{\textbf{\Large HTTP Tcpcrypt Auth}}
+  \footnote{{\tt Tcpcrypt paper}}{}
+  \footnote{{\tt http://cryptobook.net/}}{}\\
+  Quinn Slack, {\tt sqs@cs.stanford.edu}
 \end{center}
 
 \section{Definitions}
 
 \subsection*{Public}
 \begin{align*}
-\mathbf{G} &= \textrm{group of prime order $q$ on which CDH is hard}\\
-g &= \textrm{a generator of $\mathbf{G}$} \\
-U,\, V &= \textrm{chosen at random from $\mathbf{G}$} \\
-H_0,\, H_1 &= \textrm{cryptographic hash functions mapping strings to elements of $\mathbf{Z}_q$} \\
-H &= \textrm{hash function mapping to bit strings the size of a MAC key}
+\textrm{username, realm} &: \textit{strings}\\
+\mathbf{G} &: \textrm{group of prime order $q$ on which CDH is hard}\\
+g &: \textrm{a generator of $\mathbf{G}$} \\
+U,\, V &: \textrm{chosen at random from $\mathbf{G}$} \\
+H_0,\, H_1 &: \textrm{cryptographic hash functions mapping strings to elements of $\mathbf{Z}_q$} \\
+H &: \textrm{hash function mapping to bit strings the size of a MAC key}
 \shortintertext{\subsection*{Shared secrets (known to client and server)}}
 \pi_0 &= H_0(\textrm{password}, \textrm{username}, \textrm{server name}) \\
 L &= g^{\pi_1}
 \shortintertext{\subsection*{Client-side secret}}
-\textrm{password} \\
+\textrm{password} &: \textit{string}\\
 \pi_1 &= H_1(\textrm{password}, \textrm{username}, \textrm{server name})
 \end{align*}
 
@@ -39,11 +44,14 @@ L &= g^{\pi_1}
 {\tt GET /protected} &\\
 
 %%%%%%%%%%%%%%%%
-& Randomly choose $\beta \in \mathbf{Z}_q.$
+& Choose $\beta \in \mathbf{Z}_q$ at random.
 
 Compute $Y=g^\beta V^{\pi_0}.$
 
-{\tt WWW-Authenticate: Tcpcrypt realm=<realm> Y=<Y hex>} \\
+\begin{verbatim}
+WWW-Authenticate: Tcpcrypt 
+                  realm=<realm>, Y=<Y>
+\end{verbatim} \\
 
 %%%%%%%%%%%%%%%
 Choose $\alpha \in \mathbf{Z}_q$ at random.
@@ -56,25 +64,34 @@ Compute ${\tt respc} = \operatorname{MAC}(h,\, {\tt TAG\_CLIENT} | sid).$
 
 Compute $X=g^\alpha U^{\pi_0}.$
 
-{\tt Authorization: Tcpcrypt X=<X hex> respc=<respc hex> realm=<realm> username=<username>} & \\
+\begin{verbatim}
+Authorization: Tcpcrypt 
+               X=<X>, username=<username>,
+               respc=<respc>, realm=<realm>
+\end{verbatim}
+
+& \\
 
 %%%%%%%%%%%%%%%%
 & Compute $g^\alpha = g^\alpha U^{\pi_0} U^{-\pi_0}.$
 
 Compute $g^{\pi_1 \beta} = L^\beta.$
 
-Compute $h$.
+Compute $h$ (in the same way as the client).
 
-Compute ${\tt respc}$ and check it against the value sent by $C.$ Continue only if valid.
+Compute {\tt respc}. Continue only if equal to client {\tt respc}.
 
 Compute ${\tt resps} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
+\begin{verbatim}
+Authentication-Info: Tcpcrypt 
+                     resps=<resps>
 
-{\tt Authentication-Info: Tcpcrypt resps=<resps hex>\textbackslash n\textbackslash n <response data>} \\
+<contents of /protected>
+\end{verbatim} \\
 
 %%%%%%%%%%%%%%%%
-Compute ${\tt resps}$ and check it against the value sent by $S.$ If valid, display the page.
+Compute ${\tt resps}$. Show page only if equal to server {\tt resps}.
 \end{tabular}
-
 
 \end{document}
 
