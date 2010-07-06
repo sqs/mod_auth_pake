@@ -44,6 +44,7 @@ void test_pake() {
     
     assert(strncmp((char *)ps.shared.resps, (char *)pc.shared.resps, SHA256_DIGEST_LENGTH) == 0);
     assert(strncmp((char *)ps.shared.respc, (char *)pc.shared.respc, SHA256_DIGEST_LENGTH) == 0);
+    assert(strncmp((char *)ps.shared.resps, (char *)ps.shared.respc, SHA256_DIGEST_LENGTH) != 0); /* shouldn't be equal - this will fail once per universe */
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
