@@ -10,18 +10,6 @@
 static int pake_init(struct pake_info *p);
 static int pake_init_server_state(struct pake_info *p);
 
-int pake_compute_gBVpi0(BIGNUM *gBVpi0,
-                   const EC_GROUP *group,
-                   const BIGNUM *beta,
-                   const EC_POINT *V,
-                   const BIGNUM *pi_0);
-                   
-int pake_compute_gaUpi0(BIGNUM *gaUpi0,
-                   const EC_GROUP *group,
-                   const BIGNUM *beta,
-                   const EC_POINT *V,
-                   const BIGNUM *pi_0);
-
 static void debug_bignum(BIGNUM *bn);
 static void debug_pake_info(const struct pake_info *p);
 static void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);
@@ -242,26 +230,6 @@ int pake_init_server_state(struct pake_info *p) {
     if (order) BN_free(order);
     /* others already free */
     bzero(&sha, sizeof(sha));
-
-    return ret;
-}
-
-int pake_compute_gBVpi0(BIGNUM *gBVpi0,
-                   const EC_GROUP *group,
-                   const BIGNUM *beta,
-                   const EC_POINT *V,
-                   const BIGNUM *pi_0) {
-    int ret = 0;
-    
-    return ret;
-}
-                   
-int pake_compute_gaUpi0(BIGNUM *gaUpi0,
-                   const EC_GROUP *group,
-                   const BIGNUM *beta,
-                   const EC_POINT *V,
-                   const BIGNUM *pi_0) {
-    int ret = 0;
 
     return ret;
 }
