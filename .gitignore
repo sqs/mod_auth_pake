@@ -5,3 +5,4 @@
 test/test_http_tcpcrypt_auth
 *.pyc
 TAGS
+tcpcrypt_http_pake
