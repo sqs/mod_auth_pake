@@ -3,6 +3,7 @@
 #include <string.h>
 #include <assert.h>
 #include <openssl/bn.h>
+#include <openssl/sha.h>
 
 void test_pake() {
     struct pake_info ps, pc;
@@ -32,7 +33,17 @@ void test_pake() {
     assert(EC_POINT_cmp(ps.public.G, ps.shared.Z, pc.shared.Z, ctx) == 0);
 
     assert(ps.shared.h[0] && pc.shared.h[0]);
-    assert(strcmp((char *)ps.shared.h, (char *)pc.shared.h) == 0);
+    assert(strncmp((char *)ps.shared.h, (char *)pc.shared.h, SHA256_DIGEST_LENGTH) == 0);
+
+    /* TODO: HACK: fake tcpcrypt sid */
+    unsigned long sid = 123456789;
+    assert(tcpcrypt_pake_compute_resps(&ps, sid, ctx));
+    assert(tcpcrypt_pake_compute_respc(&ps, sid, ctx));
+    assert(tcpcrypt_pake_compute_resps(&pc, sid, ctx));
+    assert(tcpcrypt_pake_compute_respc(&pc, sid, ctx));
+    
+    assert(strncmp((char *)ps.shared.resps, (char *)pc.shared.resps, SHA256_DIGEST_LENGTH) == 0);
+    assert(strncmp((char *)ps.shared.respc, (char *)pc.shared.respc, SHA256_DIGEST_LENGTH) == 0);
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);

@@ -71,8 +71,8 @@ int pake_client_init_state(struct pake_info *p, BN_CTX *ctx);
 
 int pake_compute_h(struct pake_info *p, BN_CTX *ctx);
 
-int tcpcrypt_pake_compute_resps(struct pake_info *p, BN_CTX *ctx);
-int tcpcrypt_pake_compute_respc(struct pake_info *p, BN_CTX *ctx);
+int tcpcrypt_pake_compute_resps(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx);
+int tcpcrypt_pake_compute_respc(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx);
 
 void debug_pake_info(const struct pake_info *p);
 void debug_bignum(BIGNUM *bn);

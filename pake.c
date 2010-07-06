@@ -7,11 +7,16 @@
 #include <alloca.h>
 #include <openssl/obj_mac.h>
 
+const unsigned char TCPCRYPT_TAG_CLIENT = 0;
+const unsigned char TCPCRYPT_TAG_SERVER = 1;
+
 static int pake_init_shared(struct pake_info *p, BN_CTX *ctx);
 static int pake_init_public(struct pake_info *p, BN_CTX *ctx);
 
 static int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
 static int pake_client_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
+
+static int tcpcrypt_pake_compute_resp(struct pake_info *p, unsigned long tcpcrypt_sid, int is_resps, BN_CTX *ctx);
 
 static int get_affine_coordinates(const EC_GROUP *G,
                            const EC_POINT *P,
@@ -356,25 +361,41 @@ int pake_compute_h(struct pake_info *p, BN_CTX *ctx) {
     return ret;
 }
 
-int tcpcrypt_pake_compute_resps(struct pake_info *p, BN_CTX *ctx) {
-    int ret = 0;
-
-    ret = 1;
-
-    goto err;
-
- err:
-    return ret;
+/* Compute $resps = H(h, TAG_SERVER | sid).$ */
+int tcpcrypt_pake_compute_resps(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx) {
+    return tcpcrypt_pake_compute_resp(p, tcpcrypt_sid, 1, ctx);
 }
 
-int tcpcrypt_pake_compute_respc(struct pake_info *p, BN_CTX *ctx) {
+/* Compute $respc = H(h, TAG_CLIENT | sid). */
+int tcpcrypt_pake_compute_respc(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx) {
+    return tcpcrypt_pake_compute_resp(p, tcpcrypt_sid, 0, ctx);
+}
+
+int tcpcrypt_pake_compute_resp(struct pake_info *p, unsigned long tcpcrypt_sid, int is_resps, BN_CTX *ctx) {
     int ret = 0;
+    unsigned char tag;
+    SHA256_CTX sha;
+
+    /* TODO: QUESTION: Why is it H(h, TAG|sid) and not just H(h, TAG, sid)?
+       Does OR'ing the values have a special purpose? For now, this code
+       performs the latter operation. */
+
+    tag = is_resps ? TCPCRYPT_TAG_SERVER : TCPCRYPT_TAG_CLIENT;
+
+    if (!SHA256_Init(&sha)) goto err;
+    if (!SHA256_Update(&sha, p->shared.h, sizeof(p->shared.h))) goto err;
+    if (!SHA256_Update(&sha, &tcpcrypt_sid, sizeof(tcpcrypt_sid))) goto err; /* TODO: non-portable to read bytes of long -- two sides of connection could have different endianness */
+    if (!SHA256_Update(&sha, &tag, sizeof(tag))) goto err;
+    if (!SHA256_Final(is_resps ? p->shared.resps : p->shared.respc, &sha)) goto err;
 
     ret = 1;
 
     goto err;
 
  err:
+    
+    bzero(&sha, sizeof(sha));
+
     return ret;
 }
 
