@@ -51,4 +51,6 @@ struct pake_info {
 int pake_init_server(struct pake_info *p);
 int pake_init_client(struct pake_info *p);
 
+void debug_pake_info(const struct pake_info *p);
+
 #endif // TCPCRYPT_PAKE_H

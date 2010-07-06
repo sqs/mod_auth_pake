@@ -12,7 +12,6 @@ static int pake_init_server_state(struct pake_info *p);
 static int pake_init_client_state(struct pake_info *p);
 
 static void debug_bignum(BIGNUM *bn);
-static void debug_pake_info(const struct pake_info *p);
 static void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);
 
 static int hash_bn(SHA256_CTX *sha, const BIGNUM *x);
@@ -394,22 +393,3 @@ int hash_bn(SHA256_CTX *sha, const BIGNUM *x) {
   bzero(tmp, size+1);
   return ret;
 }
-
-
-#ifdef TCPCRYPT_HTTP_MAIN
-int main(int argc, char **argv) {
-    printf("tcpcrypt http pake\n\n");
-
-    struct pake_info p;
-
-    printf("pake_init_server:\n");
-    memset(&p, 0, sizeof(p));
-    if (pake_init_server(&p)) debug_pake_info(&p);
-
-    printf("pake_init_client:\n");
-    memset(&p, 0, sizeof(p));
-    if (pake_init_client(&p)) debug_pake_info(&p);
-
-    return 0;
-}
-#endif // TCPCRYPT_HTTP_MAIN

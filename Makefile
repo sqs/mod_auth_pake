@@ -21,7 +21,9 @@ test_build: test_http_tcpcrypt_auth.o
 
 test: test_build
 	test/test_http_tcpcrypt_auth
-	
+
 pake:
-	gcc -DTCPCRYPT_HTTP_MAIN -g -lssl -o tcpcrypt_http_pake pake.c
+	gcc -DTCPCRYPT_HTTP_MAIN -I. -g -lssl -o tcpcrypt_http_pake pake.c test/test_pake.c
+
+
 
