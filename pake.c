@@ -9,6 +9,7 @@
 
 static int pake_init(struct pake_info *p);
 static int pake_init_server_state(struct pake_info *p);
+static int pake_init_client_state(struct pake_info *p);
 
 static void debug_bignum(BIGNUM *bn);
 static void debug_pake_info(const struct pake_info *p);
@@ -43,7 +44,7 @@ int pake_init_client(struct pake_info *p) {
 
     if (!pake_init_public(p)) goto err;
     if (!pake_init_shared(p)) goto err;
-    /* if (!pake_init_client_state (p)) goto err; */ /* TODO: implement this */
+    if (!pake_init_client_state (p)) goto err;
 
     ret = 1;
 
@@ -192,7 +193,7 @@ int pake_init_shared(struct pake_info *p) {
     return ret;
 }
 
-/* Choose $\beta \in \mathbf{Z}_q$ at random, and compute $g^\beta
+/* Choose $\beta \in \mathbf{Z}_q$ at random, and compute $Y = g^\beta
    V^{\pi_0}.$ */
 int pake_init_server_state(struct pake_info *p) {
     int ret = 0;
@@ -222,6 +223,48 @@ int pake_init_server_state(struct pake_info *p) {
     debug_point(p->public.G, "server Y2", Y2, ctx);
     if (!EC_POINT_add(p->public.G, p->server_state.Y, Y2, p->shared.V_pi_0, ctx)) goto err;
     debug_point(p->public.G, "server Y", p->server_state.Y, ctx);
+
+    ret = 1;
+
+ err:
+    if (ctx) { BN_CTX_end(ctx); BN_CTX_free(ctx); }
+    if (order) BN_free(order);
+    /* others already free */
+    bzero(&sha, sizeof(sha));
+
+    return ret;
+}
+
+/* Choose $\beta in \mathbf{Z}_q$ at random, and compute $X=g^\alpha
+   U^{\pi_0}.$ */
+int pake_init_client_state(struct pake_info *p) {
+    int ret = 0;
+    BN_CTX *ctx = NULL;
+    BIGNUM *order = NULL;
+    EC_POINT *X2 = NULL;
+    SHA256_CTX sha;
+
+    if (!(ctx = BN_CTX_new())) goto err;
+    BN_CTX_start(ctx);
+    order = BN_new();
+    p->client_state.alpha = BN_new();
+    p->client_state.X = EC_POINT_new(p->public.G);
+    X2 = EC_POINT_new(p->public.G);
+    if (!order || !p->client_state.alpha || !p->client_state.X || !X2) goto err;
+    if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
+    if (!SHA256_Init(&sha)) goto err;
+    if (!hash_bn(&sha, p->shared.pi_0)) goto err;
+    
+    /* choose beta */
+    do {
+        if (!BN_rand_range(p->client_state.alpha, order)) goto err;
+    } while (BN_is_zero(p->client_state.alpha));
+
+    /* compute Y */
+    if (!EC_POINT_mul(p->public.G, X2, p->client_state.alpha, NULL, NULL, ctx)) goto err;
+    debug_point(p->public.G, "client X2", X2, ctx);
+    if (!EC_POINT_add(p->public.G, p->client_state.X, X2, p->shared.U_pi_0, ctx)) goto err;
+    debug_point(p->public.G, "client X", p->client_state.X, ctx);
 
     ret = 1;
 
@@ -365,7 +408,7 @@ int main(int argc, char **argv) {
 
     printf("pake_init_client:\n");
     memset(&p, 0, sizeof(p));
-    //if (pake_init_client(&p)) debug_pake_info(&p);
+    if (pake_init_client(&p)) debug_pake_info(&p);
 
     return 0;
 }
