@@ -25,6 +25,12 @@ void test_pake() {
 
     debug_point(ps.public.G, "server N", ps.shared.N, ctx);
     debug_point(pc.public.G, "client N", pc.shared.N, ctx);
+    debug_point(ps.public.G, "server Z", ps.shared.Z, ctx);
+    debug_point(pc.public.G, "client Z", pc.shared.Z, ctx);
+
+    assert(EC_POINT_cmp(ps.public.G, ps.shared.N, pc.shared.N, ctx) == 0);
+    assert(EC_POINT_cmp(ps.public.G, ps.shared.Z, pc.shared.Z, ctx) == 0);
+
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);
