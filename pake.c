@@ -22,6 +22,7 @@ int pake_compute_gaUpi0(BIGNUM *gaUpi0,
                    const EC_POINT *V,
                    const BIGNUM *pi_0);
 
+static void debug_bignum(BIGNUM *bn);
 static void debug_pake_info(const struct pake_info *p);
 static void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);
 
@@ -273,7 +274,42 @@ void debug_pake_info(const struct pake_info *p) {
     printf("%schar *username = \"%s\"\n", t, p->public.username);
     printf("%schar *realm    = \"%s\"\n", t, p->public.realm);
 
-    printf("}\n");
+    printf("\n%s/*** pake_shared_info ***/\n", t);
+    printf("%spi_0 =  ", t); debug_bignum(p->shared.pi_0); printf("\n");
+    printf("%sL    = ", t); debug_point(p->public.G, "", p->shared.L, NULL);
+
+    printf("\n%s/*** pake_client_info ***/\n", t);
+    printf("%spassword = \"%s\"\n", t, p->client.password);
+    printf("%spi_0     =  ", t); debug_bignum(p->client.pi_1); printf("\n");
+
+    printf("\n%s/*** pake_client_state ***/\n", t);
+    printf("%salpha = ", t); debug_bignum(p->client_state.alpha); printf("\n");
+    printf("%sX = ", t); debug_point(p->public.G, "", p->client_state.X, NULL); printf("\n");
+
+    printf("\n%s/*** pake_server_state ***/\n", t);
+    printf("%sbeta = ", t); debug_bignum(p->server_state.beta); printf("\n");
+    printf("%sY = ", t); debug_point(p->public.G, "", p->server_state.Y, NULL); printf("\n");
+
+    printf("\n}\n");
+}
+
+void debug_bignum(BIGNUM *bn) {
+    if (!bn) goto err;
+
+    int size = BN_num_bytes(bn);
+    unsigned char *out_bn = alloca(size);
+    int i;
+
+    if (!BN_bn2bin(bn, out_bn)) goto err;
+
+    for (i=0; i<size; i++) {
+        if (i && i % 8 == 0) printf(" ");
+        printf("%02hhX", out_bn[i]);
+    }
+
+    return;
+ err:
+    printf("debug_bignum ERROR\n");
 }
 
 void debug_point(const EC_GROUP *G,
@@ -283,33 +319,24 @@ void debug_point(const EC_GROUP *G,
   BIGNUM *x = BN_new(), *y = BN_new();
   int sx, sy;
   unsigned char *out_x = NULL, *out_y = NULL;
+  if (!P) goto err;
   if (!x || !y) goto err;
   if (!get_affine_coordinates(G, P, x, y, ctx)) goto err;
-  sx = BN_num_bytes(x);
-  sy = BN_num_bytes(y);
-
-  out_x = alloca(sx);
-  out_y = alloca(sy);
-  if (!BN_bn2bin(x, out_x)) goto err;
-  if (!BN_bn2bin(y, out_y)) goto err;
   
-  int i;
-  printf("***DEBUG*** %s:\n*** x = ", message);
-  for (i=0; i<sx; i++) {
-    if (i && i % 8 == 0) printf(" ");
-    printf("%02hhX", out_x[i]);
+  if (strlen(message)) {
+      printf("*** %s: ", message);
   }
-  printf("\n*** y = ");
-  for (i=0; i<sy; i++) {
-    if (i && i % 8 == 0) printf(" ");
-    printf("%02hhX", out_y[i]);
-  }
-  printf("\n\n");
+
+  printf("(");
+  debug_bignum(x);
+  printf(", ");
+  debug_bignum(y);
+  printf(")\n");
 
   goto done;
 
  err:
-  printf("***DEBUG*** %s: FAIL\n", message);
+  printf("debug_point %sERROR\n", strlen(message) ? message : "");
 
  done:
   if (out_x) bzero(out_x, sx);

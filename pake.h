@@ -45,7 +45,6 @@ struct pake_info {
     struct pake_client_state client_state;
     struct pake_server_state server_state;
 };
-
 int pake_init_server(struct pake_info *p);
 int pake_init_client(struct pake_info *p);
 
