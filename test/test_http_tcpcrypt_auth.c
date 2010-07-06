@@ -13,6 +13,7 @@
 #include "tcpcrypt_session.h"
 #include "header.h"
 #include "http_tcpcrypt_auth.h"
+#include "test_pake.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests
@@ -154,7 +155,7 @@ void get_auth_hdrlenge(struct http_request *req, struct http_response *res, stru
     char *www_auth = header_val(res, "WWW-Authenticate");
 
     memset(hdr, 0, sizeof(struct tcpcrypt_http_header));
-    parse_hdr(hdr, www_auth);
+    parse_header(hdr, www_auth);
 }
 
 void test_auth_hdrlenge(void) {
@@ -171,17 +172,15 @@ void test_auth_hdrlenge(void) {
     TEST_ASSERT(www_auth != NULL);
     TEST_ASSERT(strstr(www_auth, " Tcpcrypt ") == www_auth);
 
-    if (detailed) inspect_hdr(&hdr);
+    if (detailed) inspect_header(&hdr);
     TEST_ASSERT(hdr.auth_name && strcmp(hdr.auth_name, "Tcpcrypt") == 0);
     TEST_ASSERT(hdr.realm && strcmp(hdr.realm, "protected area") == 0);
 }
 
 void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *hdr) {
     char ha1[33];
-    make_ha1(ha1, TEST_USER1, TEST_REALM1, TEST_PW1);
     ha1[32] = '\0';
     char resp[33];
-    ///make_response(resp, ha1, hdr->nonce, tcpcrypt_get_sid()); REDO for EC
     resp[32] = '\0';
 
     /* construct Authorization header */
@@ -230,14 +229,13 @@ void test_auth_info(void) {
     /* check auth-info */
     char *auth_info = header_val(&res, "Authentication-Info");
     char rspauth[33];
+    rspauth[32] = '\0';
     parse_auth_info_rspauth(rspauth, auth_info);
 
     /* make expected rspauth: MD5(HA1, sid) */
     char exp_rspauth[33];
     char ha1[33];
-    make_ha1(ha1, "jsmith", "protected area", "jsmith");
     ha1[32] = '\0';
-    ///make_response(exp_rspauth, ha1, hdr.nonce, tcpcrypt_get_sid()); REDO for EC
 
     TEST_ASSERT(strcmp(exp_rspauth, rspauth) == 0);
 }
@@ -251,7 +249,7 @@ void test_authenticates_first_time(void) {
     get_auth_hdrlenge(&req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
-    if (detailed) inspect_hdr(&hdr);
+    if (detailed) inspect_header(&hdr);
 
     char auth_hdr[1000];
     make_auth_hdr(auth_hdr, &hdr);
@@ -271,7 +269,6 @@ void test_gets_root_unauthenticated(void) {
 
 void test_make_ha1(void) {
     char ha1[33];
-    make_ha1(ha1, "jsmith", "protected area", "jsmith");
     ha1[32] = '\0';
     char exp_ha1[] = "a6ee4e8e8b478bbf7b7a98317597e070";
     TEST_ASSERT(strncmp(exp_ha1, ha1, strlen(exp_ha1)) == 0);
@@ -279,14 +276,13 @@ void test_make_ha1(void) {
 
 void test_make_response(void) {
     char resp[33];
-    make_response(resp, "aaaabbbbccccddddeeeeffff00001111", 
-                  "1111222233334444555566667777888899990000aa",
-                  1122334455);
     char exp_resp[] = "66130504aac9beb441806ad9c1c8f245";
     TEST_ASSERT(strncmp(exp_resp, resp, strlen(exp_resp)) == 0);
 }
 
 static struct test _tests[] = {
+    { test_pake_init_server, "test_pake_init_server" },
+    { test_pake_init_client, "test_pake_init_client" },
     { test_authenticates_first_time, "authsingle"},
     { test_gets_root_unauthenticated, "noauth"},
     { test_auth_hdrlenge, "hdr"},

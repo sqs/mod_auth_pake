@@ -12,9 +12,9 @@ struct tcpcrypt_http_header {
 
 /* Parses header value (only the part after the ":", not the whole line) into
    `header`. */
-void parse_hdr(struct tcpcrypt_http_header *info, const char *header_val);
+void parse_header(struct tcpcrypt_http_header *info, const char *header_val);
 
-void inspect_hdr(struct tcpcrypt_http_header *info);
+void inspect_header(struct tcpcrypt_http_header *info);
 
 
 #endif // MOD_AUTH_TCPCRYPT_TEST_HEADER_H
