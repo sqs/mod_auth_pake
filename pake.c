@@ -36,6 +36,8 @@ static int get_affine_coordinates(const EC_GROUP *G,
 int pake_init_server(struct pake_info *p) {
     int ret = 0;
 
+    p->isserver = 1;
+
     if (!pake_init_public(p)) goto err;
     if (!pake_init_shared(p)) goto err;
     if (!pake_init_server_state(p)) goto err;
@@ -47,7 +49,9 @@ int pake_init_server(struct pake_info *p) {
 }
 
 int pake_init_client(struct pake_info *p) {
-        int ret = 0;
+    int ret = 0;
+
+    p->isclient = 1;    
 
     if (!pake_init_public(p)) goto err;
     if (!pake_init_shared(p)) goto err;
@@ -278,19 +282,23 @@ void debug_pake_info(const struct pake_info *p) {
     printf("%spi_0 =  ", t); debug_bignum(p->shared.pi_0); printf("\n");
     printf("%sL    = ", t); debug_point(p->public.G, "", p->shared.L, NULL);
 
-    printf("\n%s/*** pake_client_info ***/\n", t);
-    printf("%spassword = \"%s\"\n", t, p->client.password);
-    printf("%spi_0     =  ", t); debug_bignum(p->client.pi_1); printf("\n");
+    if (p->isclient) {
+        printf("\n%s/*** pake_client_info ***/\n", t);
+        printf("%spassword = \"%s\"\n", t, p->client.password);
+        printf("%spi_0     =  ", t); debug_bignum(p->client.pi_1); printf("\n");
 
-    printf("\n%s/*** pake_client_state ***/\n", t);
-    printf("%salpha = ", t); debug_bignum(p->client_state.alpha); printf("\n");
-    printf("%sX = ", t); debug_point(p->public.G, "", p->client_state.X, NULL); printf("\n");
+        printf("\n%s/*** pake_client_state ***/\n", t);
+        printf("%salpha = ", t); debug_bignum(p->client_state.alpha); printf("\n");
+        printf("%sX = ", t); debug_point(p->public.G, "", p->client_state.X, NULL); printf("\n");
+    }
 
-    printf("\n%s/*** pake_server_state ***/\n", t);
-    printf("%sbeta = ", t); debug_bignum(p->server_state.beta); printf("\n");
-    printf("%sY = ", t); debug_point(p->public.G, "", p->server_state.Y, NULL); printf("\n");
+    if (p->isserver) {
+        printf("\n%s/*** pake_server_state ***/\n", t);
+        printf("%sbeta =  ", t); debug_bignum(p->server_state.beta); printf("\n");
+        printf("%sY    = ", t); debug_point(p->public.G, "", p->server_state.Y, NULL);
+    }
 
-    printf("\n}\n");
+    printf("}\n");
 }
 
 void debug_bignum(BIGNUM *bn) {
@@ -389,7 +397,7 @@ int main(int argc, char **argv) {
 
     printf("pake_init_client:\n");
     memset(&p, 0, sizeof(p));
-    if (pake_init_client(&p)) debug_pake_info(&p);
+    //if (pake_init_client(&p)) debug_pake_info(&p);
 
     return 0;
 }
