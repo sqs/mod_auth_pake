@@ -346,12 +346,31 @@ int pake_compute_k(struct pake_info *p, BN_CTX *ctx) {
     if (!SHA256_Final(p->shared.k, &sha)) goto err;
     
     ret = 1;
+
  err:
     if (P_x) BN_clear_free(P_x);
     if (P_y) BN_clear_free(P_y);
 
     bzero(&sha, sizeof(sha));
 
+    return ret;
+}
+
+int tcpcrypt_pake_compute_rs(struct pake_info *p, BN_CTX *ctx) {
+    int ret = 0;
+
+    ret = 1;
+
+ err:
+    return ret;
+}
+
+int tcpcrypt_pake_compute_rc(struct pake_info *p, BN_CTX *ctx) {
+    int ret = 0;
+
+    ret = 1;
+
+ err:
     return ret;
 }
 
