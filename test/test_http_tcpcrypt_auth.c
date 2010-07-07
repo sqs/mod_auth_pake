@@ -11,10 +11,12 @@
 /* #include <arpa/inet.h> */
 #include <curl/curl.h>
 #include <openssl/sha.h>
+#include <assert.h>
 #include "tcpcrypt_session.h"
 #include "http_header.h"
 #include "http_tcpcrypt_auth.h"
 #include "test_pake.h"
+#include "pake.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests
@@ -297,12 +299,27 @@ void test_www_authenticate_hdr(void) {
     CLEAR_HEADER(hdr);
     hdr.type = HTTP_WWW_AUTHENTICATE;
     hdr.realm = "protected area";
-    hdr.Y = "0123456789abcdef";
+    strcpy(hdr.Y, "0123456789abcdef");
     char header_line[1000];
     memset((void *)&header_line, 0, sizeof(header_line));
     TEST_ASSERT(tcpcrypt_http_header_stringify(header_line, &hdr, 0));
     char *exp_header_line = "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"";
     TEST_ASSERT_STREQ(exp_header_line, header_line);
+}
+
+void test_pake_set_ec_point() {
+    struct pake_info ps;
+    struct tcpcrypt_http_header hdr;
+    BN_CTX *ctx = NULL;
+
+    memset(&ps, 0, sizeof(ps));
+    memset(&hdr, 0, sizeof(hdr));
+    assert(ctx = BN_CTX_new());
+    BN_CTX_start(ctx);
+
+    assert(pake_server_init(&ps, ctx));
+    assert(pake_stringify_ec_point(hdr.Y, ps.public.G, ps.server_state.Y, ctx));
+    TEST_ASSERT(hdr.Y[0] != '\0'); /* not a very good test, but... */
 }
 
 static struct test _tests[] = {
@@ -312,6 +329,7 @@ static struct test _tests[] = {
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_auth_info, "auth_info" },
+    { test_pake_set_ec_point, "test_pake_set_ec_point" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */

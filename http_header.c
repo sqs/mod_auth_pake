@@ -58,10 +58,10 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
                     hdr->realm = strdup(content);
                     assert(hdr->realm);
                 } else if(strcmp(value, "X") == 0) {
-                    hdr->X = strdup(content);
+                    strncpy(hdr->X, content, MAX_EC_POINT_STRING_LENGTH);
                     assert(hdr->X);
                 } else if(strcmp(value, "Y") == 0) {
-                    hdr->Y = strdup(content);
+                    strncpy(hdr->Y, content, MAX_EC_POINT_STRING_LENGTH);
                     assert(hdr->Y);
                 } else if (strcmp(value, "respc") == 0) {
                     hdr->respc = strdup(content);
@@ -126,3 +126,4 @@ void tcpcrypt_http_header_inspect(struct tcpcrypt_http_header *hdr) {
            hdr->auth_name,
            hdr->realm /* , TODO more */);
 }
+
