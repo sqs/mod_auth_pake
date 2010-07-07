@@ -182,41 +182,6 @@ static authn_status get_ha1(request_rec *r, const char *user,
     return auth_result;
 }
 
-static int check_nonce(request_rec *r, auth_tcpcrypt_header_rec *resp,
-                       const auth_tcpcrypt_config_rec *conf)
-{
-    return OK;
-    /* apr_time_t dt; */
-    /* int len; */
-    /* time_rec nonce_time; */
-    /* char tmp, hash[NONCE_HASH_LEN+1]; */
-
-    /* if (strlen(resp->nonce) != NONCE_LEN) { */
-    /*     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, */
-    /*                   "auth_tcpcrypt: invalid nonce %s received - length is not %d", */
-    /*                   resp->nonce, NONCE_LEN); */
-    /*     note_digest_auth_failure(r, conf, resp, 1); */
-    /*     return HTTP_UNAUTHORIZED; */
-    /* } */
-
-    /* tmp = resp->nonce[NONCE_TIME_LEN]; */
-    /* resp->nonce[NONCE_TIME_LEN] = '\0'; */
-    /* len = apr_base64_decode_binary(nonce_time.arr, resp->nonce); */
-    /* gen_nonce_hash(hash, resp->nonce, resp->opaque, r->server, conf); */
-    /* resp->nonce[NONCE_TIME_LEN] = tmp; */
-    /* resp->nonce_time = nonce_time.time; */
-
-    /* if (strcmp(hash, resp->nonce+NONCE_TIME_LEN)) { */
-    /*     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, */
-    /*                   "auth_tcpcrypt: invalid nonce %s received - hash is not %s", */
-    /*                   resp->nonce, hash); */
-    /*     note_digest_auth_failure(r, conf, resp, 1); */
-    /*     return HTTP_UNAUTHORIZED; */
-    /* } */
-
-    /* return OK; */
-}
-
 static void copy_uri_components(apr_uri_t *dst,
                                 apr_uri_t *src, request_rec *r) {
     if (src->scheme && src->scheme[0] != '\0') {
