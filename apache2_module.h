@@ -28,6 +28,7 @@
 #include "mod_auth.h"
 
 #include "http_header.h"
+#include "pake.h"
 
 
 /* Disable shmem until pools/init gets sorted out
@@ -54,6 +55,9 @@ typedef struct auth_tcpcrypt_config_struct {
     const char  *dir_name;
     authn_provider_list *providers;
     const char  *realm;
+
+    BN_CTX      *bn_ctx;
+    struct pake_info pake;
 } auth_tcpcrypt_config_rec;
 
 
@@ -62,8 +66,6 @@ typedef struct auth_tcpcrypt_config_struct {
 typedef struct hash_entry {
     unsigned long      key;                     /* the key for this entry    */
     struct hash_entry *next;                    /* next entry in the bucket  */
-    char               ha1[2*APR_MD5_DIGESTSIZE+1];
-    char               last_nonce[NONCE_LEN+1]; /* for one-time nonce's      */
 } client_entry;
 
 

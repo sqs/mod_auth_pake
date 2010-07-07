@@ -2,6 +2,7 @@
 #include "apache2_module_init.h"
 #include "crypto.h"
 #include "tcpcrypt_session.h"
+#include <assert.h>
 
 /*
  * Authorization header parser code
@@ -109,9 +110,15 @@ static void make_auth_challenge(request_rec *r,
 {
     char *h = malloc(1000); /* TODO */
     
+    struct pake_info p;
+    memset(&p, 0, sizeof(p));
+    BN_CTX *ctx = BN_CTX_new();
+    BN_CTX_start(ctx);
+    assert(pake_server_init(&p, ctx));
+  
     resp->hdr.type = HTTP_WWW_AUTHENTICATE;
     resp->hdr.realm = "protected area";
-    resp->hdr.Y = "asdf";
+    pake_stringify_ec_point(resp->hdr.Y, p.public.G, p.server_state.Y, ctx);
     
     tcpcrypt_http_header_stringify(h, &resp->hdr, 1);
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", h);
@@ -122,9 +129,9 @@ static void make_auth_challenge(request_rec *r,
  * Authorization header verification code
  */
 
-/* Gets HA1 and stores it in `conf`. */
-static authn_status get_ha1(request_rec *r, const char *user,
-                             auth_tcpcrypt_config_rec *conf)
+/* Gets pake info and stores it in `conf`. */
+static authn_status get_user_pake_info(request_rec *r, const char *user,
+                                       auth_tcpcrypt_config_rec *conf)
 {
     authn_status auth_result;
     char *password;
@@ -175,8 +182,7 @@ static authn_status get_ha1(request_rec *r, const char *user,
     } while (current_provider);
 
     if (auth_result == AUTH_USER_FOUND) {
-        /*conf->ha1 = password;*/
-        /* TODO2 */
+        /* TODO2: get user pake info */
     }
 
     return auth_result;
@@ -378,7 +384,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_UNAUTHORIZED;
     }
 
-    return_code = get_ha1(r, r->user, conf);
+    return_code = get_user_pake_info(r, r->user, conf);
 
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
