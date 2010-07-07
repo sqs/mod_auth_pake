@@ -183,8 +183,8 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ("Tcpcrypt", hdr.auth_name);
     TEST_ASSERT_STREQ("protected area", hdr.realm);
     TEST_ASSERT(hdr.Y != NULL);
-    TEST_ASSERT(strlen(hdr.Y) == SHA256_DIGEST_LENGTH);
-    TEST_ASSERT(hdr.X == NULL);
+    TEST_ASSERT(strlen(hdr.Y) > 30);
+    TEST_ASSERT_STREQ("", hdr.X);
     TEST_ASSERT(hdr.username == NULL);
     TEST_ASSERT(hdr.resps == NULL);
     TEST_ASSERT(hdr.respc == NULL);
