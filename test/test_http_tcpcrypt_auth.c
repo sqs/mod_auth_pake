@@ -299,7 +299,7 @@ void test_www_authenticate_hdr(void) {
 static struct test _tests[] = {
     { test_pake, "test_pake" },
     { test_authenticates_first_time, "authsingle"},
-    { test_gets_root_unauthenticated, "noauth"},
+    { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_auth_info, "auth_info" },
