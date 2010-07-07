@@ -1,11 +1,14 @@
 #ifndef MOD_AUTH_TCPCRYPT_TEST_HEADER_H
 #define MOD_AUTH_TCPCRYPT_TEST_HEADER_H
 
+enum tcpcrypt_http_auth_header_type {
+    HTTP_WWW_AUTHENTICATE, 
+    HTTP_AUTHORIZATION,
+    HTTP_AUTHENTICATION_INFO
+};
+
 struct tcpcrypt_http_header {
-    enum { HTTP_WWW_AUTHENTICATE, 
-           HTTP_AUTHORIZATION,
-           HTTP_AUTHENTICATION_INFO
-    } type;
+    enum tcpcrypt_http_auth_header_type type;
     char *auth_name; /* = Tcpcrypt */
     char *username;
     char *realm;
@@ -17,10 +20,10 @@ struct tcpcrypt_http_header {
 
 /* Parses header value (only the part after the ":", not the whole line) into
    `header`. */
-int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *info, const char *header_line);
+int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *info, const char *header_line, enum tcpcrypt_http_auth_header_type type);
 
 /* Write header to string. */
-int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *info);
+int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *info, int value_only);
 
 /* Print debugging info about header. */
 void tcpcrypt_http_header_inspect(struct tcpcrypt_http_header *info);

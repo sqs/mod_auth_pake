@@ -110,25 +110,24 @@ void headers_inspect(struct http_response *res) {
 /* Returns the NULL-terminated value of the HTTP header with name `k`,
    or NULL if it's not found. */
 char *header_val(struct http_response *res, char *k) {
-    char *val = NULL;
     char *header_prefix;
     struct curl_slist *e;
     
     header_prefix = malloc(strlen(k) + 2); // len + ':' + '\0'
     strcpy(header_prefix, k);
     strcat(header_prefix, ":");
-
+    
+    char *header_line = NULL;
     for (e = res->headers; e != NULL; e = e->next) {
-        char *header_line = e->data;
-        char *m = strstr(header_line, header_prefix);
-        if (m == header_line) {
-            val = header_line;
+       header_line = e->data;
+        if (strncmp(header_prefix, header_line, strlen(header_prefix)) == 0) {
+            header_line += strlen(header_prefix);
             break;
         }
     }
 
     free(header_prefix);
-    return val;
+    return header_line;
 }
 
 void do_http_request(struct http_request *req, struct http_response *res) {
@@ -155,12 +154,12 @@ void do_http_request(struct http_request *req, struct http_response *res) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, NULL);
 }
 
-void get_hdr(char *k, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
+void get_hdr(char *k, enum tcpcrypt_http_auth_header_type type, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
     do_http_request(req, res);
     char *header_line = header_val(res, k);
 
     memset(hdr, 0, sizeof(struct tcpcrypt_http_header));
-    tcpcrypt_http_header_parse(hdr, header_line);
+    tcpcrypt_http_header_parse(hdr, header_line, type);
 }
 
 void test_apache_www_authenticate_hdr(void) {
@@ -170,7 +169,7 @@ void test_apache_www_authenticate_hdr(void) {
     CLEAR_HEADER(hdr);
     
     req.url = TEST_PROTECTED_URL;
-    get_hdr("WWW-Authenticate", &req, &res, &hdr);
+    get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
     char *www_auth = header_val(&res, "WWW-Authenticate");
@@ -228,7 +227,7 @@ void test_auth_info(void) {
     struct tcpcrypt_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
-    get_hdr("WWW-Authenticate", &req, &res, &hdr);
+    get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
     char auth_hdr[1000];
@@ -258,7 +257,7 @@ void test_authenticates_first_time(void) {
     struct tcpcrypt_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
-    get_hdr("WWW-Authenticate", &req, &res, &hdr);
+    get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
     if (detailed) tcpcrypt_http_header_inspect(&hdr);
@@ -284,7 +283,7 @@ void test_www_authenticate_hdr(void) {
     
     /* parse test */
     CLEAR_HEADER(hdr);
-    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\""));
+    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"", HTTP_WWW_AUTHENTICATE));
     TEST_ASSERT(hdr.type == HTTP_WWW_AUTHENTICATE);
     TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
     TEST_ASSERT(hdr.username == NULL);
@@ -301,7 +300,7 @@ void test_www_authenticate_hdr(void) {
     hdr.Y = "0123456789abcdef";
     char header_line[1000];
     memset((void *)&header_line, 0, sizeof(header_line));
-    TEST_ASSERT(tcpcrypt_http_header_stringify(header_line, &hdr));
+    TEST_ASSERT(tcpcrypt_http_header_stringify(header_line, &hdr, 0));
     char *exp_header_line = "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"";
     TEST_ASSERT_STREQ(exp_header_line, header_line);
 }

@@ -6,10 +6,6 @@
 #include <assert.h>
 #include "curl_http_kv_parser.h"
 
-static const char *h_www_auth = "WWW-Authenticate:",
-                      *h_authorization = "Authorization:",
-                      *h_authentication_info = "Authentication-Info:";
-
 char *strdup(const char *str)
 {
   size_t len;
@@ -33,23 +29,11 @@ char *strdup(const char *str)
 
 }
 
-int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line) {
+int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type type) {
     /* TODO: check whether HTTP header keys are case sensitive */
     
-    /* find header key */
-    if (strncmp(h_www_auth, header_line, strlen(h_www_auth)) == 0) {
-        hdr->type = HTTP_WWW_AUTHENTICATE;
-        header_line += strlen(h_www_auth);
-    } else if (strncmp(h_authorization, header_line, strlen(h_authorization)) == 0) {
-        hdr->type = HTTP_AUTHORIZATION;
-        header_line += strlen(h_authorization);
-    } else if (strncmp(h_authentication_info, header_line, strlen(h_authentication_info)) == 0) {
-        hdr->type = HTTP_AUTHENTICATION_INFO;
-        header_line += strlen(h_authentication_info);
-    } else {
-        goto err;
-    }
-
+    hdr->type = type;
+    
     /* skip whitespaces */
     while(*header_line && isspace(*header_line))
         header_line++;
@@ -112,16 +96,21 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
     return 0;
 }
 
-int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *info) {
+int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *info, int value_only) {
     /* TODO: use snprintf */
     /* TODO: escape double quotes in quoted vals */
 
     if (info->type == HTTP_WWW_AUTHENTICATE) {
-        sprintf(header_line, "WWW-Authenticate: Tcpcrypt realm=\"%s\" Y=\"%s\"", info->realm, info->Y);
+        sprintf(header_line, "%sTcpcrypt realm=\"%s\" Y=\"%s\"", 
+                value_only ? "" : "WWW-Authenticate: ", info->realm, info->Y);
     } else if (info->type == HTTP_AUTHORIZATION) {
-        sprintf(header_line, "Authorization: Tcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"", info->X, info->username, info->respc, info->realm);
+        sprintf(header_line, "%sTcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"",
+                value_only ? "" : "Authorization: ",
+                info->X, info->username, info->respc, info->realm);
     } else if (info->type == HTTP_AUTHENTICATION_INFO) {
-        sprintf(header_line, "Authentication-Info: Tcpcrypt resps=\"%s\"", info->resps);
+        sprintf(header_line, "%sTcpcrypt resps=\"%s\"", 
+                value_only ? "" : "Authentication-Info: ", info->resps);
+
     } else {
         goto err;
     }
