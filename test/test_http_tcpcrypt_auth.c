@@ -10,6 +10,7 @@
 /* #include <sys/socket.h> */
 /* #include <arpa/inet.h> */
 #include <curl/curl.h>
+#include <openssl/sha.h>
 #include "tcpcrypt_session.h"
 #include "http_header.h"
 #include "http_tcpcrypt_auth.h"
@@ -26,6 +27,8 @@ static int detailed = 0; // level of detail for tests
 #define TEST_USER1 "jsmith"
 #define TEST_REALM1 "protected area"
 #define TEST_PW1 "jsmith"
+
+#define CLEAR_HEADER(hdr) memset((void *)&hdr, 0, sizeof(hdr))
 
 static CURL *curl;
 
@@ -164,18 +167,26 @@ void test_apache_www_authenticate_hdr(void) {
     struct http_request req;
     struct http_response res;
     struct tcpcrypt_http_header hdr;
+    CLEAR_HEADER(hdr);
     
     req.url = TEST_PROTECTED_URL;
     get_hdr("WWW-Authenticate", &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
     char *www_auth = header_val(&res, "WWW-Authenticate");
-    if (detailed) fprintf(stderr, "WWW-Authenticate: %s\n", www_auth);
+    if (detailed) fprintf(stderr, "%s\n", www_auth);
     TEST_ASSERT(www_auth != NULL);
 
     if (detailed) tcpcrypt_http_header_inspect(&hdr);
-    TEST_ASSERT(hdr.auth_name && strcmp(hdr.auth_name, "Tcpcrypt") == 0);
-    TEST_ASSERT(hdr.realm && strcmp(hdr.realm, "protected area") == 0);
+    TEST_ASSERT(hdr.type == HTTP_WWW_AUTHENTICATE);
+    TEST_ASSERT_STREQ("Tcpcrypt", hdr.auth_name);
+    TEST_ASSERT_STREQ("protected area", hdr.realm);
+    TEST_ASSERT(hdr.Y != NULL);
+    TEST_ASSERT(strlen(hdr.Y) == SHA256_DIGEST_LENGTH);
+    TEST_ASSERT(hdr.X == NULL);
+    TEST_ASSERT(hdr.username == NULL);
+    TEST_ASSERT(hdr.resps == NULL);
+    TEST_ASSERT(hdr.respc == NULL);
 }
 
 void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *hdr) {
@@ -268,7 +279,6 @@ void test_gets_root_unauthenticated(void) {
     TEST_ASSERT(res.status == 200);
 }
 
-#define CLEAR_HEADER(hdr) memset((void *)&hdr, 0, sizeof(hdr))
 void test_www_authenticate_hdr(void) {
     struct tcpcrypt_http_header hdr;
     
