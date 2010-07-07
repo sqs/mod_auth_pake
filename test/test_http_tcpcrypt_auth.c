@@ -271,10 +271,10 @@ void test_gets_root_unauthenticated(void) {
 #define CLEAR_HEADER(hdr) memset((void *)&hdr, 0, sizeof(hdr))
 void test_www_authenticate_hdr(void) {
     struct tcpcrypt_http_header hdr;
-    CLEAR_HEADER(hdr);
     
     /* parse test */
-    tcpcrypt_http_header_parse(&hdr, "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"");
+    CLEAR_HEADER(hdr);
+    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\""));
     TEST_ASSERT(hdr.type == HTTP_WWW_AUTHENTICATE);
     TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
     TEST_ASSERT(hdr.username == NULL);
@@ -284,8 +284,16 @@ void test_www_authenticate_hdr(void) {
     TEST_ASSERT(hdr.respc == NULL);
     TEST_ASSERT(hdr.resps == NULL);
 
+    /* stringify test */
     CLEAR_HEADER(hdr);
-    /* TODO: stringify test */
+    hdr.type = HTTP_WWW_AUTHENTICATE;
+    hdr.realm = "protected area";
+    hdr.Y = "0123456789abcdef";
+    char header_line[1000];
+    memset((void *)&header_line, 0, sizeof(header_line));
+    TEST_ASSERT(tcpcrypt_http_header_stringify(header_line, &hdr));
+    char *exp_header_line = "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"";
+    TEST_ASSERT_STREQ(exp_header_line, header_line);
 }
 
 static struct test _tests[] = {

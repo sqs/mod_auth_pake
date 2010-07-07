@@ -6,6 +6,10 @@
 #include <assert.h>
 #include "curl_http_kv_parser.h"
 
+static const char *h_www_auth = "WWW-Authenticate:",
+                      *h_authorization = "Authorization:",
+                      *h_authentication_info = "Authentication-Info:";
+
 char *strdup(const char *str)
 {
   size_t len;
@@ -31,9 +35,6 @@ char *strdup(const char *str)
 
 int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line) {
     /* TODO: check whether HTTP header keys are case sensitive */
-    static const char *h_www_auth = "WWW-Authenticate:",
-                      *h_authorization = "Authorization:",
-                      *h_authentication_info = "Authentication-Info:";
     
     /* find header key */
     if (strncmp(h_www_auth, header_line, strlen(h_www_auth)) == 0) {
@@ -112,7 +113,23 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
 }
 
 int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *info) {
+    /* TODO: use snprintf */
+    /* TODO: escape double quotes in quoted vals */
+
+    if (info->type == HTTP_WWW_AUTHENTICATE) {
+        sprintf(header_line, "WWW-Authenticate: Tcpcrypt realm=\"%s\" Y=\"%s\"", info->realm, info->Y);
+    } else if (info->type == HTTP_AUTHORIZATION) {
+        sprintf(header_line, "Authorization: Tcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"", info->X, info->username, info->respc, info->realm);
+    } else if (info->type == HTTP_AUTHENTICATION_INFO) {
+        sprintf(header_line, "Authentication-Info: Tcpcrypt resps=\"%s\"", info->resps);
+    } else {
+        goto err;
+    }
+    
     return 1;
+
+ err:
+    return 0;
 }
 
 void tcpcrypt_http_header_inspect(struct tcpcrypt_http_header *hdr) {
