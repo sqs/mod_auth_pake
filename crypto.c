@@ -25,8 +25,7 @@ const char *get_userpw_hash(const request_rec *r,
                             const auth_tcpcrypt_config_rec *conf)
 {
     unsigned char *resp_plain = apr_pstrcat(r->pool,
-                                            conf->ha1, ":",
-                                            resp->nonce, ":",
+                                            /* TODO2 */
                                             ltox(r->pool, tcpcrypt_get_sid()),
                                             NULL);
     return ap_md5(r->pool, resp_plain);

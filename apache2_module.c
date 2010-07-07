@@ -1,56 +1,7 @@
-/*
- * mod_auth_digest: MD5 digest authentication
- *
- * Originally by Alexei Kosut <akosut@nueva.pvt.k12.ca.us>
- * Updated to RFC-2617 by Ronald Tschalär <ronald@innovation.ch>
- * based on mod_auth, by Rob McCool and Robert S. Thau
- *
- * This module an updated version of modules/standard/mod_digest.c
- * It is still fairly new and problems may turn up - submit problem
- * reports to the Apache bug-database, or send them directly to me
- * at ronald@innovation.ch.
- *
- * Requires either /dev/random (or equivalent) or the truerand library,
- * available for instance from
- * ftp://research.att.com/dist/mab/librand.shar
- *
- * Open Issues:
- *   - qop=auth-int (when streams and trailer support available)
- *   - nonce-format configurability
- *   - Proxy-Authorization-Info header is set by this module, but is
- *     currently ignored by mod_proxy (needs patch to mod_proxy)
- *   - generating the secret takes a while (~ 8 seconds) if using the
- *     truerand library
- *   - The source of the secret should be run-time directive (with server
- *     scope: RSRC_CONF). However, that could be tricky when trying to
- *     choose truerand vs. file...
- *   - shared-mem not completely tested yet. Seems to work ok for me,
- *     but... (definitely won't work on Windoze)
- *   - Sharing a realm among multiple servers has following problems:
- *     o Server name and port can't be included in nonce-hash
- *       (we need two nonce formats, which must be configured explicitly)
- *     o Nonce-count check can't be for equal, or then nonce-count checking
- *       must be disabled. What we could do is the following:
- *       (expected < received) ? set expected = received : issue error
- *       The only problem is that it allows replay attacks when somebody
- *       captures a packet sent to one server and sends it to another
- *       one. Should we add "TcpcryptAuthNcCheck Strict"?
- *   - expired nonces give amaya fits.
- */
-
 #include "apache2_module.h"
 #include "apache2_module_init.h"
 #include "crypto.h"
 #include "tcpcrypt_session.h"
-
-
-/* (mostly) nonce stuff */
-
-typedef union time_union {
-    apr_time_t    time;
-    unsigned char arr[sizeof(apr_time_t)];
-} time_rec;
-
 
 /*
  * Authorization header parser code
@@ -64,94 +15,21 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
     int vk = 0, vv = 0;
     char *key, *value;
 
-    auth_line = apr_table_get(r->headers_in,
-                             (PROXYREQ_PROXY == r->proxyreq)
-                                 ? "Proxy-Authorization"
-                                 : "Authorization");
+    auth_line = apr_table_get(r->headers_in, "Authorization");
     if (!auth_line) {
         resp->auth_hdr_sts = NO_HEADER;
         return !OK;
     }
 
-    resp->scheme = ap_getword_white(r->pool, &auth_line);
-    if (strcasecmp(resp->scheme, "Tcpcrypt")) {
+    resp->hdr.auth_name = ap_getword_white(r->pool, &auth_line);
+    if (strcasecmp(resp->hdr.auth_name, "Tcpcrypt")) {
         resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
         return !OK;
     }
 
-    l = strlen(auth_line);
+    tcpcrypt_http_header_parse(&resp->hdr, auth_line, HTTP_AUTHORIZATION);
 
-    key   = apr_palloc(r->pool, l+1);
-    value = apr_palloc(r->pool, l+1);
-
-    while (auth_line[0] != '\0') {
-
-        /* find key */
-
-        while (apr_isspace(auth_line[0])) {
-            auth_line++;
-        }
-        vk = 0;
-        while (auth_line[0] != '=' && auth_line[0] != ','
-               && auth_line[0] != '\0' && !apr_isspace(auth_line[0])) {
-            key[vk++] = *auth_line++;
-        }
-        key[vk] = '\0';
-        while (apr_isspace(auth_line[0])) {
-            auth_line++;
-        }
-
-        /* find value */
-
-        if (auth_line[0] == '=') {
-            auth_line++;
-            while (apr_isspace(auth_line[0])) {
-                auth_line++;
-            }
-
-            vv = 0;
-            if (auth_line[0] == '\"') {         /* quoted string */
-                auth_line++;
-                while (auth_line[0] != '\"' && auth_line[0] != '\0') {
-                    if (auth_line[0] == '\\' && auth_line[1] != '\0') {
-                        auth_line++;            /* escaped char */
-                    }
-                    value[vv++] = *auth_line++;
-                }
-                if (auth_line[0] != '\0') {
-                    auth_line++;
-                }
-            }
-            else {                               /* token */
-                while (auth_line[0] != ',' && auth_line[0] != '\0'
-                       && !apr_isspace(auth_line[0])) {
-                    value[vv++] = *auth_line++;
-                }
-            }
-            value[vv] = '\0';
-        }
-
-        while (auth_line[0] != ',' && auth_line[0] != '\0') {
-            auth_line++;
-        }
-        if (auth_line[0] != '\0') {
-            auth_line++;
-        }
-
-        if (!strcasecmp(key, "username"))
-            resp->username = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "realm"))
-            resp->realm = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "nonce"))
-            resp->nonce = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "uri"))
-            resp->uri = apr_pstrdup(r->pool, value);
-        else if (!strcasecmp(key, "response"))
-            resp->digest = apr_pstrdup(r->pool, value);
-    }
-
-    if (!resp->username || !resp->realm || !resp->nonce || !resp->uri
-        || !resp->digest) {
+    if (!resp->hdr.username || !resp->hdr.realm || !resp->hdr.X || !resp->hdr.respc) {
         resp->auth_hdr_sts = INVALID;
         return !OK;
     }
@@ -203,96 +81,40 @@ static void gen_nonce_hash(char *hash, const char *timestr,
     apr_sha1_ctx_t ctx;
     int idx;
 
-    memcpy(&ctx, &conf->nonce_ctx, sizeof(ctx));
+
     /*
     apr_sha1_update_binary(&ctx, (const unsigned char *) server->server_hostname,
                          strlen(server->server_hostname));
     apr_sha1_update_binary(&ctx, (const unsigned char *) &server->port,
                          sizeof(server->port));
      */
-    apr_sha1_update_binary(&ctx, (const unsigned char *) timestr, strlen(timestr));
-    apr_sha1_final(sha1, &ctx);
+    /* apr_sha1_update_binary(&ctx, (const unsigned char *) timestr, strlen(timestr)); */
+    /* apr_sha1_final(sha1, &ctx); */
 
-    for (idx=0; idx<APR_SHA1_DIGESTSIZE; idx++) {
-        *hash++ = hex[sha1[idx] >> 4];
-        *hash++ = hex[sha1[idx] & 0xF];
-    }
+    /* for (idx=0; idx<APR_SHA1_DIGESTSIZE; idx++) { */
+    /*     *hash++ = hex[sha1[idx] >> 4]; */
+    /*     *hash++ = hex[sha1[idx] & 0xF]; */
+    /* } */
 
-    *hash++ = '\0';
-}
-
-
-/* The nonce has the format b64(time)+hash .
- */
-static const char *gen_nonce(apr_pool_t *p, apr_time_t now,
-                             const server_rec *server,
-                             const auth_tcpcrypt_config_rec *conf)
-{
-    char *nonce = apr_palloc(p, NONCE_LEN+1);
-    int len;
-    time_rec t;
-
-    if (conf->nonce_lifetime != 0) {
-        t.time = now;
-    }
-    else if (otn_counter) {
-        /* this counter is not synch'd, because it doesn't really matter
-         * if it counts exactly.
-         */
-        t.time = (*otn_counter)++;
-    }
-    else {
-        /* XXX: WHAT IS THIS CONSTANT? */
-        t.time = 42;
-    }
-    len = apr_base64_encode_binary(nonce, t.arr, sizeof(t.arr));
-    gen_nonce_hash(nonce+NONCE_TIME_LEN, nonce, server, conf);
-
-    return nonce;
+    /* *hash++ = '\0'; */
 }
 
 /*
  * Authorization challenge generation code (for WWW-Authenticate)
  */
 
-static void note_digest_auth_failure(request_rec *r,
-                                     const auth_tcpcrypt_config_rec *conf,
-                                     auth_tcpcrypt_header_rec *resp, int stale)
+static void make_auth_challenge(request_rec *r,
+                                const auth_tcpcrypt_config_rec *conf,
+                                auth_tcpcrypt_header_rec *resp, int stale)
 {
-    const char   *domain, *nonce;
-    int           cnt;
-
-    /* Setup nonce */
-
-    nonce = gen_nonce(r->pool, r->request_time, r->server, conf);
-    if (resp->client && conf->nonce_lifetime == 0) {
-        memcpy(resp->client->last_nonce, nonce, NONCE_LEN+1);
-    }
-
-    /* setup domain attribute. We want to send this attribute wherever
-     * possible so that the client won't send the Authorization header
-     * unneccessarily (it's usually > 200 bytes!).
-     */
-
-
-    /* don't send domain
-     * - if it's not specified
-     */
-    if (!conf->uri_list) {
-        domain = NULL;
-    }
-    else {
-        domain = conf->uri_list;
-    }
-
-    apr_table_mergen(r->err_headers_out,
-                     "WWW-Authenticate",
-                     apr_psprintf(r->pool, "Tcpcrypt realm=\"%s\", "
-                                  "nonce=\"%s\"%s%s",
-                                  ap_auth_name(r), nonce,
-                                  domain ? domain : "",
-                                  stale ? ", stale=true" : ""));
-
+    char *h = malloc(1000); /* TODO */
+    
+    resp->hdr.type = HTTP_WWW_AUTHENTICATE;
+    resp->hdr.realm = "protected area";
+    resp->hdr.Y = "asdf";
+    
+    tcpcrypt_http_header_stringify(h, &resp->hdr, 1);
+    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", h);
 }
 
 
@@ -353,7 +175,8 @@ static authn_status get_ha1(request_rec *r, const char *user,
     } while (current_provider);
 
     if (auth_result == AUTH_USER_FOUND) {
-        conf->ha1 = password;
+        /*conf->ha1 = password;*/
+        /* TODO2 */
     }
 
     return auth_result;
@@ -502,7 +325,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         if (resp->auth_hdr_sts == NOT_TCPCRYPT_AUTH) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                           "auth_tcpcrypt: client used wrong authentication scheme "
-                          "`%s': %s", resp->scheme, r->uri);
+                          "`%s': %s", resp->hdr.auth_name, r->uri);
         }
         else if (resp->auth_hdr_sts == INVALID) {
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -511,11 +334,11 @@ static int authenticate_tcpcrypt_user(request_rec *r)
                           r->uri);
         }
         /* else (resp->auth_hdr_sts == NO_HEADER) */
-        note_digest_auth_failure(r, conf, resp, 0);
+        make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
 
-    r->user         = (char *) resp->username;
+    r->user         = (char *) resp->hdr.username;
     r->ap_auth_type = (char *) "Tcpcrypt";
 
     /* check the auth attributes */
@@ -582,11 +405,11 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         }
     }
 
-    if (strcmp(resp->realm, conf->realm)) {
+    if (strcmp(resp->hdr.realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
-                      resp->realm, conf->realm);
-        note_digest_auth_failure(r, conf, resp, 0);
+                      resp->hdr.realm, conf->realm);
+        make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
 
@@ -596,7 +419,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user `%s' in realm `%s' not found: %s",
                       r->user, conf->realm, r->uri);
-        note_digest_auth_failure(r, conf, resp, 0);
+        make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
     else if (return_code == AUTH_USER_FOUND) {
@@ -607,7 +430,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user `%s' in realm `%s' denied by provider: %s",
                       r->user, conf->realm, r->uri);
-        note_digest_auth_failure(r, conf, resp, 0);
+        make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
     else {
@@ -625,18 +448,12 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         /* we failed to allocate a client struct */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    if (strcmp(resp->digest, exp_response)) {
+    if (/* correct respc */0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
                       r->uri);
         note_digest_auth_failure(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
-    }
-
-    /* Note: this check is done last so that a "stale=true" can be
-       generated if the nonce is old */
-    if ((res = check_nonce(r, resp, conf))) {
-        return res;
     }
 
     return OK;

@@ -5,7 +5,7 @@ default: local
 local: auth_tcpcrypt.o
 
 auth_tcpcrypt.o:
-	apxs2 -I . -cia apache2_module.c apache2_module_init.c crypto.c tcpcrypt_session.c
+	apxs2 -I. -Icontrib -lssl -cia apache2_module.c apache2_module_init.c crypto.c tcpcrypt_session.c http_header.c pake.c contrib/curl_http_kv_parser.c
 
 clean:
 	rm -f *.o *.so *.slo *.lo *.la *.pyc

@@ -206,9 +206,7 @@ void *create_auth_tcpcrypt_dir_config(apr_pool_t *p, char *dir)
 
     conf = (auth_tcpcrypt_config_rec *) apr_pcalloc(p, sizeof(auth_tcpcrypt_config_rec));
     if (conf) {
-        conf->nonce_lifetime = DFLT_NONCE_LIFE;
         conf->dir_name       = apr_pstrdup(p, dir);
-        conf->algorithm      = DFLT_ALGORITHM;
     }
 
     return conf;
@@ -224,15 +222,6 @@ const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
      * this relies on the fact that http_core is last in the list.
      */
     conf->realm = realm;
-
-    /* we precompute the part of the nonce hash that is constant (well,
-     * the host:port would be too, but that varies for .htaccess files
-     * and directives outside a virtual host section)
-     */
-    apr_sha1_init(&conf->nonce_ctx);
-    apr_sha1_update_binary(&conf->nonce_ctx, secret, sizeof(secret));
-    apr_sha1_update_binary(&conf->nonce_ctx, (const unsigned char *) realm,
-                           strlen(realm));
 
     return DECLINE_CMD;
 }
@@ -278,46 +267,6 @@ const char *add_authn_provider(cmd_parms *cmd, void *config,
         last->next = newp;
     }
 
-    return NULL;
-}
-
-const char *set_nonce_lifetime(cmd_parms *cmd, void *config,
-                               const char *t)
-{
-    char *endptr;
-    long  lifetime;
-
-    lifetime = strtol(t, &endptr, 10);
-    if (endptr < (t+strlen(t)) && !apr_isspace(*endptr)) {
-        return apr_pstrcat(cmd->pool,
-                           "Invalid time in TcpcryptAuthNonceLifetime: ",
-                           t, NULL);
-    }
-
-    ((auth_tcpcrypt_config_rec *) config)->nonce_lifetime = apr_time_from_sec(lifetime);
-    return NULL;
-}
-
-const char *set_algorithm(cmd_parms *cmd, void *config, const char *alg)
-{
-    if (strcasecmp(alg, "MD5")) {
-        return apr_pstrcat(cmd->pool, "Invalid algorithm in TcpcryptAuthAlgorithm: ", alg, NULL);
-    }
-
-    ((auth_tcpcrypt_config_rec *) config)->algorithm = alg;
-    return NULL;
-}
-
-const char *set_uri_list(cmd_parms *cmd, void *config, const char *uri)
-{
-    auth_tcpcrypt_config_rec *c = (auth_tcpcrypt_config_rec *) config;
-    if (c->uri_list) {
-        c->uri_list[strlen(c->uri_list)-1] = '\0';
-        c->uri_list = apr_pstrcat(cmd->pool, c->uri_list, " ", uri, "\"", NULL);
-    }
-    else {
-        c->uri_list = apr_pstrcat(cmd->pool, ", domain=\"", uri, "\"", NULL);
-    }
     return NULL;
 }
 

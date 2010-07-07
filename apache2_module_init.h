@@ -47,12 +47,6 @@ static const command_rec auth_tcpcrypt_cmds[] =
      "The authentication realm (e.g. \"Members Only\")"),
     AP_INIT_ITERATE("TcpcryptAuthProvider", add_authn_provider, NULL, OR_AUTHCFG,
                      "specify the auth providers for a directory or location"),
-    AP_INIT_TAKE1("TcpcryptAuthNonceLifetime", set_nonce_lifetime, NULL, OR_AUTHCFG,
-     "Maximum lifetime of the server nonce (seconds)"),
-    AP_INIT_TAKE1("TcpcryptAuthAlgorithm", set_algorithm, NULL, OR_AUTHCFG,
-     "The algorithm used for the hash calculation"),
-    AP_INIT_ITERATE("TcpcryptAuthDomain", set_uri_list, NULL, OR_AUTHCFG,
-     "A list of URI's which belong to the same protection space as the current URI"),
     AP_INIT_TAKE1("TcpcryptAuthShmemSize", set_shmem_size, NULL, RSRC_CONF,
      "The amount of shared memory to allocate for keeping track of clients"),
     {NULL}
