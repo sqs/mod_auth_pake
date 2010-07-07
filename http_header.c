@@ -126,4 +126,3 @@ void tcpcrypt_http_header_inspect(struct tcpcrypt_http_header *hdr) {
            hdr->auth_name,
            hdr->realm /* , TODO more */);
 }
-

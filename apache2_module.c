@@ -118,7 +118,11 @@ static void make_auth_challenge(request_rec *r,
   
     resp->hdr.type = HTTP_WWW_AUTHENTICATE;
     resp->hdr.realm = "protected area";
-    pake_stringify_ec_point(resp->hdr.Y, p.public.G, p.server_state.Y, ctx);
+
+    char *s = EC_POINT_point2hex(p.public.G, p.server_state.Y,
+                                 POINT_CONVERSION_UNCOMPRESSED, ctx);
+    strcpy(resp->hdr.Y, s);
+    OPENSSL_free(s);
     
     tcpcrypt_http_header_stringify(h, &resp->hdr, 1);
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", h);

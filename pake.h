@@ -74,8 +74,6 @@ int pake_compute_h(struct pake_info *p, BN_CTX *ctx);
 int tcpcrypt_pake_compute_resps(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx);
 int tcpcrypt_pake_compute_respc(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx);
 
-int pake_stringify_ec_point(char *dest, const EC_GROUP *G, const EC_POINT *P, BN_CTX *ctx);
-
 void debug_pake_info(const struct pake_info *p);
 void debug_bignum(BIGNUM *bn);
 void debug_point(const EC_GROUP *G, const char *msg, const EC_POINT *P, BN_CTX *ctx);

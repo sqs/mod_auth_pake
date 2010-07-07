@@ -190,18 +190,30 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT(hdr.respc == NULL);
 }
 
-void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *hdr) {
-    char ha1[33];
-    ha1[32] = '\0';
-    char respc[33]; /* TODO: SHA256_DIGEST_LENGTH */
-    respc[32] = '\0';
+void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
+    struct tcpcrypt_http_header req_hdr;
+    CLEAR_HEADER(req_hdr);
 
-    /* construct Authorization header */
-    sprintf(header_line,
-            "Authorization: Tcpcrypt username=\"%s\", " \
-            "realm=\"%s\", X=\"%s\", respc=\"%s\"",
-            TEST_USER1, TEST_REALM1, hdr->X, hdr->respc);
- 
+    req_hdr.username = TEST_USER1;
+    req_hdr.realm = TEST_REALM1;
+    ///req_hdr.X;
+    ///req_hdr.respc = "";
+
+    struct pake_info pc;
+    BN_CTX *ctx = NULL;
+    memset(&pc, 0, sizeof(pc));
+    assert(ctx = BN_CTX_new());
+    BN_CTX_start(ctx);
+    assert(pake_server_init(&pc, ctx));
+    
+    char *s;
+    s = EC_POINT_point2hex(pc.public.G, pc.client_state.X, POINT_CONVERSION_UNCOMPRESSED, ctx);
+    strcpy(req_hdr.X, s);
+    OPENSSL_free(s);
+    /* TODO: respc */
+
+    assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
+    printf("make auth hdr: '%s'\n", header_line);
 }
 
 void set_auth_hdr(CURL *curl_, char *auth_hdr) {
@@ -253,7 +265,7 @@ void test_auth_info(void) {
     TEST_ASSERT(strcmp(exp_rspauth, rspauth) == 0);
 }
 
-void test_authenticates_first_time(void) {
+void test_apache_authorizes(void) {
     struct http_request req;
     struct http_response res;
     struct tcpcrypt_http_header hdr;
@@ -307,29 +319,13 @@ void test_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ(exp_header_line, header_line);
 }
 
-void test_pake_set_ec_point() {
-    struct pake_info ps;
-    struct tcpcrypt_http_header hdr;
-    BN_CTX *ctx = NULL;
-
-    memset(&ps, 0, sizeof(ps));
-    memset(&hdr, 0, sizeof(hdr));
-    assert(ctx = BN_CTX_new());
-    BN_CTX_start(ctx);
-
-    assert(pake_server_init(&ps, ctx));
-    assert(pake_stringify_ec_point(hdr.Y, ps.public.G, ps.server_state.Y, ctx));
-    TEST_ASSERT(hdr.Y[0] != '\0'); /* not a very good test, but... */
-}
-
 static struct test _tests[] = {
     { test_pake, "test_pake" },
-    { test_authenticates_first_time, "authsingle"},
+    { test_apache_authorizes, "test_apache_authorizes"},
     { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_auth_info, "auth_info" },
-    { test_pake_set_ec_point, "test_pake_set_ec_point" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
