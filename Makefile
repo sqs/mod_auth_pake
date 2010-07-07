@@ -15,7 +15,7 @@ restart:
 	sudo /etc/init.d/apache2 restart
 
 test_http_tcpcrypt_auth.o:
-	gcc -g -Wall -Werror -lssl -std=c99 -I`pwd` -Icontrib -I../tcpcrypt/code/user ${CURL} -o test/test_http_tcpcrypt_auth test/test_http_tcpcrypt_auth.c pake.c test/test_pake.c test/header.c contrib/curl_http_kv_parser.c http_tcpcrypt_auth.c tcpcrypt_session.c
+	gcc -g -Wall -Werror -lssl -std=c99 -I`pwd` -Icontrib -I../tcpcrypt/code/user ${CURL} -o test/test_http_tcpcrypt_auth test/test_http_tcpcrypt_auth.c pake.c test/test_pake.c http_header.c contrib/curl_http_kv_parser.c http_tcpcrypt_auth.c tcpcrypt_session.c
 
 test_build: test_http_tcpcrypt_auth.o
 

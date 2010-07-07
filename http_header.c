@@ -36,13 +36,18 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
                       *h_authentication_info = "Authentication-Info:";
     
     /* find header key */
-    if (strncmp(h_www_auth, header_line, strlen(h_www_auth)) == 0) 
-        hdr.type = HTTP_WWW_AUTHENTICATE;
-    else if (strncmp(h_authorization, header_line, strlen(h_authorization)) == 0)
-        hdr.type = HTTP_AUTHORIZATION;
-    else if (strncmp(h_authentication_info, header_line, strlen(h_authentication_info)) == 0)
-        hdr.type = HTTP_AUTHENTICATION_INFO;
-    else goto err;
+    if (strncmp(h_www_auth, header_line, strlen(h_www_auth)) == 0) {
+        hdr->type = HTTP_WWW_AUTHENTICATE;
+        header_line += strlen(h_www_auth);
+    } else if (strncmp(h_authorization, header_line, strlen(h_authorization)) == 0) {
+        hdr->type = HTTP_AUTHORIZATION;
+        header_line += strlen(h_authorization);
+    } else if (strncmp(h_authentication_info, header_line, strlen(h_authentication_info)) == 0) {
+        hdr->type = HTTP_AUTHENTICATION_INFO;
+        header_line += strlen(h_authentication_info);
+    } else {
+        goto err;
+    }
 
     /* skip whitespaces */
     while(*header_line && isspace(*header_line))
@@ -63,7 +68,7 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
             if(!get_pair(header_line, value, content, &header_line)) {
                 if (strcmp(value, "username") == 0) {
                     hdr->username = strdup(content);
-                    assert(hdr->realm);
+                    assert(hdr->username);
                 } else if (strcmp(value, "realm") == 0) {
                     hdr->realm = strdup(content);
                     assert(hdr->realm);
@@ -74,10 +79,10 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
                     hdr->Y = strdup(content);
                     assert(hdr->Y);
                 } else if (strcmp(value, "respc") == 0) {
-                    hdr->rc = strdup(content);
-                    assert(hdr->respcc);
+                    hdr->respc = strdup(content);
+                    assert(hdr->respc);
                 } else if (strcmp(value, "resps") == 0) {
-                    hdr->rs = strdup(content);
+                    hdr->resps = strdup(content);
                     assert(hdr->resps);
                 } else {
                     fprintf(stderr, "unknown kv pair: %s\n", value);
