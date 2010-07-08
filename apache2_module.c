@@ -331,7 +331,7 @@ void make_auth_challenge(request_rec *r,
     assert(pake_server_init(&p, ctx));
   
     resp->hdr.type = HTTP_WWW_AUTHENTICATE;
-    resp->hdr.realm = "protected area";
+    resp->hdr.realm = conf->realm;
 
     Yhex = EC_POINT_point2hex(p.public.G, p.server_state.Y,
                               POINT_CONVERSION_UNCOMPRESSED, ctx);
