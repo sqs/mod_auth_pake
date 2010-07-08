@@ -40,7 +40,7 @@ static CURL *curl;
 			printf("Test FAILED at %s:%d\n", __FILE__, __LINE__); \
 	} while (0)
 
-void TEST_ASSERT_STREQ(char *s1, char *s2) {
+void TEST_ASSERT_STREQ(const char *s1, const char *s2) {
     if (strcmp(s1, s2)) {
         fprintf(stderr, "TEST_ASSERT_STREQ: expected %s, got %s\n", s1, s2);
         assert(strcmp(s1, s2) == 0);
@@ -185,6 +185,7 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ("Tcpcrypt", hdr.auth_name);
     TEST_ASSERT_STREQ("protected area", hdr.realm);
     TEST_ASSERT(hdr.Y != NULL);
+    printf("--- '%s'\n", hdr.Y);
     TEST_ASSERT(strlen(hdr.Y) > 30);
     TEST_ASSERT_STREQ("", hdr.X);
     TEST_ASSERT(hdr.username == NULL);
@@ -206,10 +207,13 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char
     assert(ctx = BN_CTX_new());
     BN_CTX_start(ctx);
     assert(pake_client_init(&pc, ctx));
+    assert(pake_client_set_credentials(&pc, username, realm, password, ctx));
 
     EC_POINT *Y = EC_POINT_new(pc.public.G);
     EC_POINT_hex2point(pc.public.G, res_hdr->Y, Y, ctx);
     pake_client_recv_Y(&pc, Y);
+    assert(pc.client_state.X);
+    assert(pc.client_state.server_Y);
     
     char *s;
     s = EC_POINT_point2hex(pc.public.G, pc.client_state.X, POINT_CONVERSION_UNCOMPRESSED, ctx);
@@ -244,6 +248,7 @@ void test_apache_authorizes(void) {
     do_http_request(&req, &res);
     get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
+    if (res.status != 401) return;
     
     if (detailed) tcpcrypt_http_header_inspect(&hdr);
 

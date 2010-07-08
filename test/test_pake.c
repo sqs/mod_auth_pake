@@ -16,8 +16,11 @@ void test_pake() {
     assert(pake_server_init(&ps, ctx));
     assert(pake_client_init(&pc, ctx));
 
+    /* set credentials */
+    assert(pake_client_set_credentials(&pc, "jsmith", "protected area", "jsmith", ctx));
     /* TODO: HACK: fake client-server interaction */
     ps.server_state.client_X = pc.client_state.X;
+    assert(pake_server_set_credentials(&ps, "jsmith", "protected area", pc.shared.pi_0, pc.shared.L, ctx));
     pc.client_state.server_Y = ps.server_state.Y;
     
     assert(pake_compute_h(&ps, ctx));

@@ -11,7 +11,6 @@
 const unsigned char TCPCRYPT_TAG_CLIENT = 0;
 const unsigned char TCPCRYPT_TAG_SERVER = 1;
 
-static int pake_init_shared(struct pake_info *p, BN_CTX *ctx);
 static int pake_init_public(struct pake_info *p, BN_CTX *ctx);
 
 static int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx);
@@ -41,10 +40,8 @@ int pake_server_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     p->isserver = 1;
-    memset(p, 0, sizeof(p));
-
+    
     if (!pake_init_public(p, ctx)) goto err;
-    if (!pake_init_shared(p, ctx)) goto err;
     if (!pake_server_init_state(p, ctx)) goto err;
 
     ret = 1;
@@ -57,10 +54,8 @@ int pake_client_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     p->isclient = 1;
-    memset(p, 0, sizeof(p));
 
     if (!pake_init_public(p, ctx)) goto err;
-    if (!pake_init_shared(p, ctx)) goto err;
     if (!pake_client_init_state(p, ctx)) goto err;
 
     ret = 1;
@@ -77,9 +72,6 @@ int pake_init_public(struct pake_info *p, BN_CTX *ctx) {
     p->public.G = NULL;
     p->public.U = NULL;
     p->public.V = NULL;
-    p->public.username = "jsmith";
-    p->public.realm = "protected area";
-    p->client.password = "jsmith"; /* TODO: shouldn't need to set this in init_public */
 
     tmp = BN_new();
     order = BN_new();
@@ -115,52 +107,74 @@ int pake_init_public(struct pake_info *p, BN_CTX *ctx) {
     return ret;
 }
 
-/* Set $pi_0,$ and $L.$ Precompute $V^{\pi_0},$ $U^{\pi_0},$
-   $V^{-\pi_0},$ and $U^{-\pi_0}.$ */
-int pake_init_shared(struct pake_info *p, BN_CTX *ctx) {
+/* Choose $\beta \in \mathbf{Z}_q$ at random. */
+int pake_server_init_state(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
-    unsigned char H = 0;
-    SHA512_CTX sha;
-    unsigned char md[SHA512_DIGEST_LENGTH];
-    BIGNUM *tmp = NULL, *order = NULL;
+    BIGNUM *order = NULL;
 
     order = BN_new();
-    tmp = BN_new();
-    if (!order || !tmp) goto err;
+    p->server_state.beta = BN_new();
+    if (!order || !p->server_state.beta) goto err;
     if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
-
-    /* HACK: make sure we can get ~uniform distribution [bittau] */
-    if (BN_num_bits(order) > 512 - 64) goto err;
-
-    /* get pi_0 */
-    /* TODO: need to concatenate with ":"s? */
-    /* TODO: the server doesn't actually know the password -- only pi_0 is sent to it */
-    if (!(p->shared.pi_0 = BN_new())) goto err; /* TODO: free this */
-    H = 0;
-    if (!SHA512_Init(&sha)) goto err;
-    if (!SHA512_Update(&sha, &H, 1)) goto err;
-    if (!SHA512_Update(&sha, p->public.username, 1+strlen(p->public.username))) goto err;
-    if (!SHA512_Update(&sha, p->public.realm, 1+strlen(p->public.realm))) goto err;
-    if (!SHA512_Update(&sha, p->client.password, 1+strlen(p->client.password))) goto err;
-    if (!SHA512_Final(md, &sha)) goto err;
-    if (!BN_bin2bn(md, sizeof(md), tmp)) goto err;
-    if (!BN_nnmod(p->shared.pi_0, tmp, order, ctx)) goto err;
     
+    /* choose beta */
+    do {
+        if (!BN_rand_range(p->server_state.beta, order)) goto err;
+    } while (BN_is_zero(p->server_state.beta));
+    /* TODO: HACK: always use same alpha so that apache doesn't need to keep
+       per-client state -- fix this */
+    if (!BN_hex2bn(&p->server_state.beta, "7417A0A2C9824875508F1524C28FBA21F49562B89D86D15530BFF792EBBB8BDD")) goto err;
+ 
+    ret = 1;
 
-    /* get pi_1 */
-    /* TODO: need to concatenate with ":"s? */
-    /* TODO: the server doesn't actually know pi_1 -- only L is sent to it */
-    if (!(p->client.pi_1 = BN_new())) goto err; /* TODO: free this */
-    H = 1;
-    if (!SHA512_Init(&sha)) goto err;
-    if (!SHA512_Update(&sha, &H, 1)) goto err;
-    if (!SHA512_Update(&sha, p->public.username, 1+strlen(p->public.username))) goto err;
-    if (!SHA512_Update(&sha, p->public.realm, 1+strlen(p->public.realm))) goto err;
-    if (!SHA512_Update(&sha, p->client.password, 1+strlen(p->client.password))) goto err;
-    if (!SHA512_Final(md, &sha)) goto err;
-    if (!BN_bin2bn(md, sizeof(md), tmp)) goto err;
-    if (!BN_nnmod(p->client.pi_1, tmp, order, ctx)) goto err;
+ err:
+    if (order) BN_free(order);
+    /* others already free */
+
+    return ret;
+}
+
+/* Choose $\beta in \mathbf{Z}_q$ at random, and compute $X=g^\alpha
+   U^{\pi_0}.$ */
+int pake_client_init_state(struct pake_info *p, BN_CTX *ctx) {
+    int ret = 0;
+    BIGNUM *order = NULL;
+
+    order = BN_new();
+    p->client_state.alpha = BN_new();
+    if (!order || !p->client_state.alpha) goto err;
+    if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
     
+    /* choose alpha */
+    do {
+        if (!BN_rand_range(p->client_state.alpha, order)) goto err;
+    } while (BN_is_zero(p->client_state.alpha));
+
+    ret = 1;
+
+ err:
+    if (order) BN_free(order);
+    /* others already free */
+
+    return ret;
+}
+
+static int pake_common_set_credentials(struct pake_info *p,
+                                       const char *username,
+                                       const char *realm) {
+    if (!username || !realm) return 0;
+    if (username[0] == '\0' || realm[0] == '\0') return 0;
+    p->public.username = username;
+    p->public.realm = realm;
+    return 1;
+}
+
+static int pake_common_precompute(struct pake_info *p, BN_CTX *ctx) {
+    int ret = 0;
+    EC_POINT *tmp = NULL;
+
+    if (!p->shared.pi_0 || !p->public.V || !p->public.U) goto err;
+
     /* compute V_pi_0 */
     if (!(p->shared.V_pi_0 = EC_POINT_new(p->public.G))) goto err; /* TODO: free this */
     if (!EC_POINT_mul(p->public.G, p->shared.V_pi_0, NULL, p->public.V, p->shared.pi_0, ctx)) goto err;
@@ -179,104 +193,135 @@ int pake_init_shared(struct pake_info *p, BN_CTX *ctx) {
     if (!EC_POINT_mul(p->public.G, p->shared.V_minus_pi_0, NULL, p->public.V, p->shared.pi_0, ctx)) goto err;
     if (!EC_POINT_invert(p->public.G, p->shared.V_minus_pi_0, ctx)) goto err;
 
+    /* compute X and Y */
+    tmp = EC_POINT_new(p->public.G); /* TODO: free this */
+    if (!tmp) goto err;
+
+    if (p->isserver) {
+        /* compute Y */
+        if (!(p->server_state.Y = EC_POINT_new(p->public.G))) goto err;
+        if (!EC_POINT_mul(p->public.G, tmp, p->server_state.beta, NULL, NULL, ctx)) goto err;
+        if (!EC_POINT_add(p->public.G, p->server_state.Y, tmp, p->shared.V_pi_0, ctx)) goto err;    
+    }
+
+    if (p->isclient) {
+        /* compute X */
+        if (!(p->client_state.X = EC_POINT_new(p->public.G))) goto err;
+        if (!EC_POINT_mul(p->public.G, tmp, p->client_state.alpha, NULL, NULL, ctx)) goto err;
+        if (!EC_POINT_add(p->public.G, p->client_state.X, tmp, p->shared.U_pi_0, ctx)) goto err;
+    }
+
+    ret = 1;
+
+ err:
+    return ret;    
+}
+
+int pake_client_set_credentials(struct pake_info *p,
+                                const char *username, 
+                                const char *realm, 
+                                const char *password,
+                                BN_CTX *ctx) {
+    int ret = 0;
+    unsigned char H = 0;
+    BIGNUM *tmp = NULL, *order = NULL;
+    SHA512_CTX sha;
+    unsigned char md[SHA512_DIGEST_LENGTH];
+
+    if (!pake_common_set_credentials(p, username, realm)) goto err;
+
+    order = BN_new();
+    tmp = BN_new();
+    if (!order || !tmp) goto err;
+    if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
+
+    /* HACK: make sure we can get ~uniform distribution [bittau] */
+    if (BN_num_bits(order) > 512 - 64) goto err;
+
+    /* get pi_0 */
+    /* TODO: need to concatenate with ":"s? */
+    /* TODO: the server doesn't actually know the password -- only pi_0 is sent to it */
+    if (!(p->shared.pi_0 = BN_new())) goto err; /* TODO: free this */
+    H = 0;
+    if (!SHA512_Init(&sha)) goto err;
+    if (!SHA512_Update(&sha, &H, 1)) goto err;
+    if (!SHA512_Update(&sha, p->public.username, 1+strlen(p->public.username))) goto err;
+    if (!SHA512_Update(&sha, p->public.realm, 1+strlen(p->public.realm))) goto err;
+    if (!SHA512_Update(&sha, password, 1+strlen(password))) goto err;
+    if (!SHA512_Final(md, &sha)) goto err;
+    if (!BN_bin2bn(md, sizeof(md), tmp)) goto err;
+    if (!BN_nnmod(p->shared.pi_0, tmp, order, ctx)) goto err;
+
+    /* get pi_1 */
+    /* TODO: need to concatenate with ":"s? */
+    /* TODO: the server doesn't actually know pi_1 -- only L is sent to it */
+    if (!(p->client.pi_1 = BN_new())) goto err; /* TODO: free this */
+    H = 1;
+    if (!SHA512_Init(&sha)) goto err;
+    if (!SHA512_Update(&sha, &H, 1)) goto err;
+    if (!SHA512_Update(&sha, p->public.username, 1+strlen(p->public.username))) goto err;
+    if (!SHA512_Update(&sha, p->public.realm, 1+strlen(p->public.realm))) goto err;
+    if (!SHA512_Update(&sha, password, 1+strlen(password))) goto err;
+    if (!SHA512_Final(md, &sha)) goto err;
+    if (!BN_bin2bn(md, sizeof(md), tmp)) goto err;
+    if (!BN_nnmod(p->client.pi_1, tmp, order, ctx)) goto err;
+
+    if (!pake_common_set_credentials(p, username, realm)) goto err;
+
     /* compute L */
     if (!(p->shared.L = EC_POINT_new(p->public.G))) goto err; /* TODO: free this */
     if (!EC_POINT_mul(p->public.G, p->shared.L, p->client.pi_1, NULL, NULL, ctx)) goto err;
+
+    if (!pake_common_precompute(p, ctx)) goto err;
 
     ret = 1;
 
  err:
     if (!ret) {
         BN_clear(p->shared.pi_0);
-        BN_clear(p->client.pi_1); /* TODO: shouldn't access pi_1 here in init_shared */
+        BN_clear(p->client.pi_1);
     }
-
-    bzero(md, sizeof(md));
-    bzero(&sha, sizeof(sha));
 
     if (order) BN_free(order);
     if (tmp) BN_clear_free(tmp);
 
-    return ret;
-}
-
-/* Choose $\beta \in \mathbf{Z}_q$ at random, and compute $Y = g^\beta
-   V^{\pi_0}.$ */
-int pake_server_init_state(struct pake_info *p, BN_CTX *ctx) {
-    int ret = 0;
-    BIGNUM *order = NULL;
-    EC_POINT *Y2 = NULL;
-    SHA256_CTX sha;
-
-    order = BN_new();
-    p->server_state.beta = BN_new();
-    p->server_state.Y = EC_POINT_new(p->public.G);
-    Y2 = EC_POINT_new(p->public.G);
-    if (!order || !p->server_state.beta || !p->server_state.Y || !Y2) goto err;
-    if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
-    if (!SHA256_Init(&sha)) goto err;
-    if (!hash_bn(&sha, p->shared.pi_0)) goto err;
-    
-    /* choose beta */
-    do {
-        if (!BN_rand_range(p->server_state.beta, order)) goto err;
-    } while (BN_is_zero(p->server_state.beta));
-    /* TODO: HACK: always use same alpha so that apache doesn't need to keep
-       per-client state -- fix this */
-    if (!BN_hex2bn(&p->server_state.beta, "7417A0A2C9824875508F1524C28FBA21F49562B89D86D15530BFF792EBBB8BDD")) goto err;
- 
-    /* compute Y */
-    if (!EC_POINT_mul(p->public.G, Y2, p->server_state.beta, NULL, NULL, ctx)) goto err;
-    if (!EC_POINT_add(p->public.G, p->server_state.Y, Y2, p->shared.V_pi_0, ctx)) goto err;
-
-    ret = 1;
-
- err:
-    if (order) BN_free(order);
-    /* others already free */
+    bzero(md, sizeof(md));
     bzero(&sha, sizeof(sha));
 
     return ret;
 }
 
-/* Choose $\beta in \mathbf{Z}_q$ at random, and compute $X=g^\alpha
-   U^{\pi_0}.$ */
-int pake_client_init_state(struct pake_info *p, BN_CTX *ctx) {
+/* Set $pi_0,$ $pi_1$ (if client), and $L.$ Precompute $V^{\pi_0},$ $U^{\pi_0},$
+   $V^{-\pi_0},$ and $U^{-\pi_0}.$ */
+int pake_server_set_credentials(struct pake_info *p,
+                                const char *username, 
+                                const char *realm,
+                                const BIGNUM *pi_0,
+                                const EC_POINT *L,
+                                BN_CTX *ctx) {
     int ret = 0;
-    BIGNUM *order = NULL;
-    EC_POINT *X2 = NULL;
-    SHA256_CTX sha;
 
-    order = BN_new();
-    p->client_state.alpha = BN_new();
-    p->client_state.X = EC_POINT_new(p->public.G);
-    X2 = EC_POINT_new(p->public.G);
-    if (!order || !p->client_state.alpha || !p->client_state.X || !X2) goto err;
-    if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
-    if (!SHA256_Init(&sha)) goto err;
-    if (!hash_bn(&sha, p->shared.pi_0)) goto err;
-    
-    /* choose alpha */
-    do {
-        if (!BN_rand_range(p->client_state.alpha, order)) goto err;
-    } while (BN_is_zero(p->client_state.alpha));
+    if (!pake_common_set_credentials(p, username, realm)) goto err;
 
-    /* compute Y */
-    if (!EC_POINT_mul(p->public.G, X2, p->client_state.alpha, NULL, NULL, ctx)) goto err;
-    if (!EC_POINT_add(p->public.G, p->client_state.X, X2, p->shared.U_pi_0, ctx)) goto err;
+    if (!pi_0 | !L) goto err;
+    p->shared.pi_0 = BN_dup(pi_0);
+    p->shared.L = EC_POINT_dup(L, p->public.G);
+
+    if (!pake_common_precompute(p, ctx)) goto err;
 
     ret = 1;
 
  err:
-    if (order) BN_free(order);
-    /* others already free */
-    bzero(&sha, sizeof(sha));
-
     return ret;
 }
 
 int pake_client_recv_Y(struct pake_info *p, EC_POINT *Y) {
     p->client_state.server_Y = Y;
+    return 1;
+}
+
+int pake_server_recv_X(struct pake_info *p, EC_POINT *X) {
+    p->server_state.client_X = X;
     return 1;
 }
 

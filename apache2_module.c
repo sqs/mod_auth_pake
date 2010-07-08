@@ -86,11 +86,26 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 {
     authn_status authn_result;
     
+    struct pake_info *pake = &conf->pake;
+    memset(pake, 0, sizeof(*pake));
+    conf->bn_ctx = BN_CTX_new();
+    BN_CTX_start(conf->bn_ctx);
+    assert(pake_server_init(pake, conf->bn_ctx));  
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- get_user_pake_info");
+
     /* TODO: obviously un-hardcode */
-    if (strcmp(username, "jsmith") == 0) {
-        struct pake_info *pake = &conf->pake;
-        /* pake->username = username; */
-        /* pake->client.password = "jsmith"; */
+    if (username && username[0] != '\0' && strcmp(username, "jsmith") == 0) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- username");
+
+        BIGNUM *pi_0;
+        assert(BN_hex2bn(&pi_0, "CBCE5FA4832FFFDF6D5A2F249BD0B89DBB1CD98908564BC2908B5109BA546FBC"));
+        assert(conf->pake.public.G);
+        EC_POINT *L = EC_POINT_new(conf->pake.public.G);
+        EC_POINT_hex2point(conf->pake.public.G, "04888D011AFDEFD6B336A96D4CC3052A842527B0134A6F7AAB11CF62A3276C526CCBF8F8EEF55C61CCD22F8578693D1CC9811DE95C04D9A0D73EC9B00F99E939DF", L, conf->bn_ctx);
+        assert(L);
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "L = %s, pi_0 = %s", EC_POINT_point2hex(conf->pake.public.G, L, POINT_CONVERSION_UNCOMPRESSED, conf->bn_ctx), BN_bn2hex(pi_0));
+
+        assert(pake_server_set_credentials(&conf->pake, "jsmith", "protected area", pi_0, L, conf->bn_ctx));
         /* TODO: in pake.c, this is currently also hardcoded -- change it there, too */
         authn_result = AUTH_USER_FOUND;
     } else {
@@ -143,6 +158,9 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     conf = (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
                                                       &auth_tcpcrypt_module);
 
+    r->user         = (char *) resp->hdr.username;
+    r->ap_auth_type = (char *) "Tcpcrypt";
+    return_code = get_user_pake_info(r, r->user, conf);
 
     /* check for existence and syntax of Authorization header */
 
@@ -163,9 +181,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_UNAUTHORIZED;
     }
 
-    r->user         = (char *) resp->hdr.username;
-    r->ap_auth_type = (char *) "Tcpcrypt";
-
     /* check the auth attributes */
 
     if (strcmp(resp->hdr.realm, conf->realm)) {
@@ -175,8 +190,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
-
-    return_code = get_user_pake_info(r, r->user, conf);
 
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -203,12 +216,19 @@ static int authenticate_tcpcrypt_user(request_rec *r)
          */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    
+
+    /* recv client X */
+    EC_POINT *X = EC_POINT_new(conf->pake.public.G);
+    assert(EC_POINT_hex2point(conf->pake.public.G, resp->hdr.X, X, conf->bn_ctx));
+    pake_server_recv_X(&conf->pake, X);
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "------- X = %s", resp->hdr.X);
+
     if (!tcpcrypt_pake_compute_respc(&conf->pake, tcpcrypt_get_sid(), conf->bn_ctx)) {
         /* failed to compute respc */
+        assert(0);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "-------");    
     char *exp_respc = conf->pake.shared.respc;
     char *client_respc = resp->hdr.respc;
     if (strcmp(exp_respc, client_respc)) {
@@ -272,18 +292,13 @@ void make_auth_challenge(request_rec *r,
                          auth_tcpcrypt_header_rec *resp, int stale)
 {
     char *Yhex = NULL, *header_line = NULL;
-    struct pake_info p;
     BN_CTX *ctx = NULL;
-
-    memset(&p, 0, sizeof(p));
-    ctx = BN_CTX_new();
-    BN_CTX_start(ctx);
-    assert(pake_server_init(&p, ctx));
   
     resp->hdr.type = HTTP_WWW_AUTHENTICATE;
     resp->hdr.realm = conf->realm;
-
-    Yhex = EC_POINT_point2hex(p.public.G, p.server_state.Y,
+    
+    assert(conf->pake.server_state.Y);
+    Yhex = EC_POINT_point2hex(conf->pake.public.G, conf->pake.server_state.Y,
                               POINT_CONVERSION_UNCOMPRESSED, ctx);
     strcpy(resp->hdr.Y, Yhex);
     OPENSSL_free(Yhex);

@@ -11,8 +11,8 @@ struct pake_public_info {
     EC_GROUP *G;
     EC_POINT *U;
     EC_POINT *V;
-    char     *username;
-    char     *realm;
+    const char     *username;
+    const char     *realm;
 };
 
 struct pake_shared_info {
@@ -61,8 +61,8 @@ struct pake_info {
     struct pake_client_info  client;
     struct pake_client_state client_state;
     struct pake_server_state server_state;
-    int isclient;
-    int isserver;
+    unsigned isclient;
+    unsigned isserver;
 };
 
 int pake_server_init(struct pake_info *p, BN_CTX *ctx);
@@ -71,7 +71,11 @@ int pake_client_init(struct pake_info *p, BN_CTX *ctx);
 int pake_server_init_state(struct pake_info *p, BN_CTX *ctx);
 int pake_client_init_state(struct pake_info *p, BN_CTX *ctx);
 
+int pake_client_set_credentials(struct pake_info *p, const char *username, const char *realm, const char *password, BN_CTX *ctx);
+int pake_server_set_credentials(struct pake_info *p, const char *username, const char *realm, const BIGNUM *pi_0, const EC_POINT *L, BN_CTX *ctx);
+
 int pake_client_recv_Y(struct pake_info *p, EC_POINT *Y);
+int pake_server_recv_X(struct pake_info *p, EC_POINT *X);
 
 int pake_compute_h(struct pake_info *p, BN_CTX *ctx);
 

@@ -22,6 +22,7 @@ test_build: test_http_tcpcrypt_auth.o
 test: test_build
 	test/test_http_tcpcrypt_auth
 
-
+htpake:
+	gcc -g -Wall -Werror -lssl -std=c99 -I. htpake.c pake.c -o htpake
 
 
