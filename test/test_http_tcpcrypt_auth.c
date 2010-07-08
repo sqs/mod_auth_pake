@@ -186,8 +186,8 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT(strlen(hdr.Y) > 30);
     TEST_ASSERT_STREQ("", hdr.X);
     TEST_ASSERT(hdr.username == NULL);
-    TEST_ASSERT(hdr.resps == NULL);
-    TEST_ASSERT(hdr.respc == NULL);
+    TEST_ASSERT(hdr.resps[0] == '\0');
+    TEST_ASSERT(hdr.respc[0] == '\0');
 }
 
 void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
