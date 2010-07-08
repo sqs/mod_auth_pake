@@ -34,21 +34,12 @@ int initialize_module(apr_pool_t *p, apr_pool_t *plog,
 void initialize_child(apr_pool_t *p, server_rec *s);
 void *create_auth_tcpcrypt_dir_config(apr_pool_t *p, char *dir);
 
-const char *set_shmem_size(cmd_parms *cmd, void *config, const char *size_str);
-const char *set_uri_list(cmd_parms *cmd, void *config, const char *uri);
-const char *set_algorithm(cmd_parms *cmd, void *config, const char *alg);
-const char *set_nonce_lifetime(cmd_parms *cmd, void *config, const char *t);
-const char *add_authn_provider(cmd_parms *cmd, void *config, const char *arg);
 const char *set_realm(cmd_parms *cmd, void *config, const char *realm);
 
 static const command_rec auth_tcpcrypt_cmds[] =
 {
     AP_INIT_TAKE1("AuthName", set_realm, NULL, OR_AUTHCFG,
      "The authentication realm (e.g. \"Members Only\")"),
-    AP_INIT_ITERATE("TcpcryptAuthProvider", add_authn_provider, NULL, OR_AUTHCFG,
-                     "specify the auth providers for a directory or location"),
-    AP_INIT_TAKE1("TcpcryptAuthShmemSize", set_shmem_size, NULL, RSRC_CONF,
-     "The amount of shared memory to allocate for keeping track of clients"),
     {NULL}
 };
 
