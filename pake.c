@@ -274,6 +274,11 @@ int pake_client_init_state(struct pake_info *p, BN_CTX *ctx) {
     return ret;
 }
 
+int pake_client_recv_Y(struct pake_info *p, EC_POINT *Y) {
+    p->client_state.server_Y = Y;
+    return 1;
+}
+
 /* Compute $N = L^\beta$ and $Z = (X/U^{\pi_0})^\beta.$ */
 int pake_server_compute_N_Z(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;

@@ -194,23 +194,35 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
     struct tcpcrypt_http_header req_hdr;
     CLEAR_HEADER(req_hdr);
 
+    req_hdr.type = HTTP_AUTHORIZATION;
     req_hdr.username = TEST_USER1;
     req_hdr.realm = TEST_REALM1;
-    ///req_hdr.X;
-    ///req_hdr.respc = "";
 
     struct pake_info pc;
     BN_CTX *ctx = NULL;
     memset(&pc, 0, sizeof(pc));
     assert(ctx = BN_CTX_new());
     BN_CTX_start(ctx);
-    assert(pake_server_init(&pc, ctx));
+    assert(pake_client_init(&pc, ctx));
+
+    EC_POINT *Y = EC_POINT_new(pc.public.G);
+    EC_POINT_hex2point(pc.public.G, res_hdr->Y, Y, ctx);
+    pake_client_recv_Y(&pc, Y);
     
     char *s;
     s = EC_POINT_point2hex(pc.public.G, pc.client_state.X, POINT_CONVERSION_UNCOMPRESSED, ctx);
     strcpy(req_hdr.X, s);
     OPENSSL_free(s);
-    /* TODO: respc */
+    
+    tcpcrypt_pake_compute_respc(&pc, tcpcrypt_get_sid(), ctx);
+    const char *hex = "0123456789ABCDEF";
+    int i = 0;
+    s = req_hdr.respc;
+    for (i=0; i < SHA256_DIGEST_LENGTH; ++i) {
+        *s++ = hex[pc.shared.respc[i] >> 4];
+        *s++ = hex[pc.shared.respc[i] & 0xF];
+    }
+    *s++ = '\0';
 
     assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
     printf("make auth hdr: '%s'\n", header_line);

@@ -2,6 +2,7 @@
 #define MOD_AUTH_TCPCRYPT_TEST_HEADER_H
 
 #include <openssl/ec.h>
+#include <openssl/sha.h>
 
 #define MAX_BN_STRING_LENGTH 100
 #define MAX_EC_POINT_STRING_LENGTH (MAX_BN_STRING_LENGTH*2 + 3)
@@ -19,8 +20,8 @@ struct tcpcrypt_http_header {
     char *realm;
     char X[MAX_EC_POINT_STRING_LENGTH];
     char Y[MAX_EC_POINT_STRING_LENGTH];
-    char *respc;
-    char *resps;
+    char respc[1000]; /* TODO: find exact len of hex SHA256 hash val */
+    char resps[1000]; 
 };
 
 /* Parses header value (only the part after the ":", not the whole line) into

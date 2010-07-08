@@ -69,6 +69,8 @@ int pake_client_init(struct pake_info *p, BN_CTX *ctx);
 int pake_server_init_state(struct pake_info *p, BN_CTX *ctx);
 int pake_client_init_state(struct pake_info *p, BN_CTX *ctx);
 
+int pake_client_recv_Y(struct pake_info *p, EC_POINT *Y);
+
 int pake_compute_h(struct pake_info *p, BN_CTX *ctx);
 
 int tcpcrypt_pake_compute_resps(struct pake_info *p, unsigned long tcpcrypt_sid, BN_CTX *ctx);
