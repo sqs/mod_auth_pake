@@ -321,24 +321,26 @@ void make_auth_challenge(request_rec *r,
                          const auth_tcpcrypt_config_rec *conf,
                          auth_tcpcrypt_header_rec *resp, int stale)
 {
-    char *h = malloc(1000); /* TODO */
-    
+    char *Yhex = NULL, *header_line = NULL;
     struct pake_info p;
+    BN_CTX *ctx = NULL;
+
     memset(&p, 0, sizeof(p));
-    BN_CTX *ctx = BN_CTX_new();
+    ctx = BN_CTX_new();
     BN_CTX_start(ctx);
     assert(pake_server_init(&p, ctx));
   
     resp->hdr.type = HTTP_WWW_AUTHENTICATE;
     resp->hdr.realm = "protected area";
 
-    char *s = EC_POINT_point2hex(p.public.G, p.server_state.Y,
-                                 POINT_CONVERSION_UNCOMPRESSED, ctx);
-    strcpy(resp->hdr.Y, s);
-    OPENSSL_free(s);
+    Yhex = EC_POINT_point2hex(p.public.G, p.server_state.Y,
+                              POINT_CONVERSION_UNCOMPRESSED, ctx);
+    strcpy(resp->hdr.Y, Yhex);
+    OPENSSL_free(Yhex);
     
-    tcpcrypt_http_header_stringify(h, &resp->hdr, 1);
-    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", h);
+    header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_LENGTH(&resp->hdr));
+    tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1);
+    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);
 }
 
 static void register_hooks(apr_pool_t *p)
