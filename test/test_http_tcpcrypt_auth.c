@@ -40,7 +40,12 @@ static CURL *curl;
 			printf("Test FAILED at %s:%d\n", __FILE__, __LINE__); \
 	} while (0)
 
-#define TEST_ASSERT_STREQ(s1, s2) TEST_ASSERT(strcmp(s1, s2) == 0)
+void TEST_ASSERT_STREQ(char *s1, char *s2) {
+    if (strcmp(s1, s2)) {
+        fprintf(stderr, "TEST_ASSERT_STREQ: expected %s, got %s\n", s1, s2);
+        assert(strcmp(s1, s2) == 0);
+    }
+}
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(*(x)))
 
@@ -157,8 +162,12 @@ void do_http_request(struct http_request *req, struct http_response *res) {
 }
 
 void get_hdr(char *k, enum tcpcrypt_http_auth_header_type type, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
-    do_http_request(req, res);
     char *header_line = header_val(res, k);
+
+    if (!header_line) {
+        fprintf(stderr, "get_hdr: couldn't get header '%s'\n", k);
+        return;
+    }
 
     memset(hdr, 0, sizeof(struct tcpcrypt_http_header));
     tcpcrypt_http_header_parse(hdr, header_line, type);
@@ -171,6 +180,7 @@ void test_apache_www_authenticate_hdr(void) {
     CLEAR_HEADER(hdr);
     
     req.url = TEST_PROTECTED_URL;
+    do_http_request(&req, &res);
     get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
@@ -190,7 +200,7 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT(hdr.respc[0] == '\0');
 }
 
-void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
+void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char *exp_resps) {
     struct tcpcrypt_http_header req_hdr;
     CLEAR_HEADER(req_hdr);
 
@@ -219,6 +229,10 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
 
     assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
     if (detailed) printf("make auth hdr: '%s'\n", header_line);
+
+    /* save expected resps to exp_resps */
+    tcpcrypt_pake_compute_resps(&pc, tcpcrypt_get_sid(), ctx);
+    strcpy(exp_resps, (char *)pc.shared.resps);
 }
 
 void set_auth_hdr(CURL *curl_, char *auth_hdr) {
@@ -228,65 +242,30 @@ void set_auth_hdr(CURL *curl_, char *auth_hdr) {
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
 }
 
-void parse_auth_info_rspauth(char *rspauth, char *auth_info) {
-    /* since rspauth is the only thing contained in the
-       Authentication-Info header, just use substrings
-       instead of an actual tokenizer
-    */
-    const size_t rspauth_digest_len = 32;
-    if (auth_info[0] == ' ') auth_info++;
-    auth_info += strlen("rspauth=\"");
-    memcpy(rspauth, auth_info, rspauth_digest_len);
-    rspauth[rspauth_digest_len] = '\0';
-}
-
-void test_auth_info(void) {
-    struct http_request req;
-    struct http_response res;
-    struct tcpcrypt_http_header hdr;
-    
-    req.url = TEST_PROTECTED_URL;
-    get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
-    TEST_ASSERT(res.status == 401);
-    
-    char auth_hdr[1000];
-    make_auth_hdr(auth_hdr, &hdr);
-    set_auth_hdr(curl, auth_hdr);
-
-    do_http_request(&req, &res);
-    TEST_ASSERT(res.status == 200);
-
-    /* check auth-info */
-    char *auth_info = header_val(&res, "Authentication-Info");
-    char rspauth[33];
-    rspauth[32] = '\0';
-    parse_auth_info_rspauth(rspauth, auth_info);
-
-    /* make expected rspauth: MD5(HA1, sid) */
-    char exp_rspauth[33];
-    char ha1[33];
-    ha1[32] = '\0';
-
-    TEST_ASSERT(strcmp(exp_rspauth, rspauth) == 0);
-}
-
 void test_apache_authorizes(void) {
     struct http_request req;
     struct http_response res;
     struct tcpcrypt_http_header hdr;
+    CLEAR_HEADER(hdr);
     
     req.url = TEST_PROTECTED_URL;
+    do_http_request(&req, &res);
     get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
     if (detailed) tcpcrypt_http_header_inspect(&hdr);
 
-    char auth_hdr[1000];
-    make_auth_hdr(auth_hdr, &hdr);
+    char auth_hdr[1000], exp_resps[RESP_LENGTH];
+    make_auth_hdr(auth_hdr, &hdr, exp_resps);
     set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
+    
+    /* check resps */
+    CLEAR_HEADER(hdr);
+    get_hdr("Authentication-Info", HTTP_AUTHENTICATION_INFO, &req, &res, &hdr);
+    TEST_ASSERT_STREQ(exp_resps, hdr.resps);
 }
 
 void test_gets_root_unauthenticated(void) {
@@ -330,7 +309,6 @@ static struct test _tests[] = {
     { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
-    { test_auth_info, "auth_info" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */

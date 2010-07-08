@@ -329,10 +329,10 @@ static int add_auth_info(request_rec *r)
      */
     struct tcpcrypt_http_header hdr;
     hdr.type = HTTP_AUTHENTICATION_INFO;
-    strcpy(hdr.resps, "asdf");
+    strcpy(hdr.resps, conf->pake.shared.resps);
     ai = malloc(1000); /* TODO2: allocate in apr pool */
     tcpcrypt_http_header_stringify(ai, &hdr, 1);
-
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "auth info: '%s'", ai);
     if (ai && ai[0]) {
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);
     }
