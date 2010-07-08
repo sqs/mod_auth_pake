@@ -3,13 +3,42 @@
 #include "crypto.h"
 #include "tcpcrypt_session.h"
 #include <assert.h>
+int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp);
+void make_auth_challenge(request_rec *r,
+                         const auth_tcpcrypt_config_rec *conf,
+                         auth_tcpcrypt_header_rec *resp, int stale);
+
+/* Get the request-uri (before any subrequests etc are initiated) and
+ * initialize the request_config.
+ */
+static int make_header_rec(request_rec *r)
+{
+    auth_tcpcrypt_header_rec *resp;
+
+    if (!ap_is_initial_req(r)) {
+        return DECLINED;
+    }
+
+    resp = apr_pcalloc(r->pool, sizeof(auth_tcpcrypt_header_rec));
+    resp->raw_request_uri = r->unparsed_uri;
+    resp->psd_request_uri = &r->parsed_uri;
+    resp->needed_auth = 0;
+    resp->method = r->method;
+    ap_set_module_config(r->request_config, &auth_tcpcrypt_module, resp);
+
+    parse_authorization_header(r, resp);
+
+    return DECLINED;
+}
+
+
 
 /*
  * Authorization header parser code
  */
 
 /* Parse the Authorization header, if it exists */
-static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
+int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
 {
     const char *auth_line;
     apr_size_t l;
@@ -43,59 +72,7 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
 }
 
 
-/* Get the request-uri (before any subrequests etc are initiated) and
- * initialize the request_config.
- */
-static int parse_hdr(request_rec *r)
-{
-    auth_tcpcrypt_header_rec *resp;
-    int res;
 
-    if (!ap_is_initial_req(r)) {
-        return DECLINED;
-    }
-
-    resp = apr_pcalloc(r->pool, sizeof(auth_tcpcrypt_header_rec));
-    resp->raw_request_uri = r->unparsed_uri;
-    resp->psd_request_uri = &r->parsed_uri;
-    resp->needed_auth = 0;
-    resp->method = r->method;
-    ap_set_module_config(r->request_config, &auth_tcpcrypt_module, resp);
-
-    res = get_digest_rec(r, resp);
-    //XXX resp->client = get_client(resp->opaque_num, r);
-
-    return DECLINED;
-}
-
-
-/*
- * Authorization challenge generation code (for WWW-Authenticate)
- */
-
-static void make_auth_challenge(request_rec *r,
-                                const auth_tcpcrypt_config_rec *conf,
-                                auth_tcpcrypt_header_rec *resp, int stale)
-{
-    char *h = malloc(1000); /* TODO */
-    
-    struct pake_info p;
-    memset(&p, 0, sizeof(p));
-    BN_CTX *ctx = BN_CTX_new();
-    BN_CTX_start(ctx);
-    assert(pake_server_init(&p, ctx));
-  
-    resp->hdr.type = HTTP_WWW_AUTHENTICATE;
-    resp->hdr.realm = "protected area";
-
-    char *s = EC_POINT_point2hex(p.public.G, p.server_state.Y,
-                                 POINT_CONVERSION_UNCOMPRESSED, ctx);
-    strcpy(resp->hdr.Y, s);
-    OPENSSL_free(s);
-    
-    tcpcrypt_http_header_stringify(h, &resp->hdr, 1);
-    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", h);
-}
 
 
 /*
@@ -189,9 +166,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     /* do we require Tcpcrypt auth for this URI? */
 
     if (!(t = ap_auth_type(r)) || strcasecmp(t, "Tcpcrypt")) {
-        /* XXX shouldn't print client input to log - remove this once it's fixed */
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: need auth type %s, got %s", "Tcpcrypt", t);
         return DECLINED;
     }
 
@@ -222,7 +196,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
                                                       &auth_tcpcrypt_module);
 
 
-    /* check for existence and syntax of Auth header */
+    /* check for existence and syntax of Authorization header */
 
     if (resp->auth_hdr_sts != VALID) {
         if (resp->auth_hdr_sts == NOT_TCPCRYPT_AUTH) {
@@ -306,12 +280,12 @@ static int authenticate_tcpcrypt_user(request_rec *r)
 
 static int add_auth_info(request_rec *r)
 {
-    const auth_tcpcrypt_config_rec *conf =
-                (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
-                                                           &auth_tcpcrypt_module);
+    auth_tcpcrypt_config_rec *conf =
+        (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
+                                                          &auth_tcpcrypt_module);
     auth_tcpcrypt_header_rec *resp =
-                (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
-                                                           &auth_tcpcrypt_module);
+        (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
+                                                          &auth_tcpcrypt_module);
     char *ai, *resp_dig = NULL;
 
     if (resp == NULL || !resp->needed_auth || conf == NULL) {
@@ -340,6 +314,33 @@ static int add_auth_info(request_rec *r)
     return OK;
 }
 
+/*
+ * Authorization challenge generation code (for WWW-Authenticate)
+ */
+
+void make_auth_challenge(request_rec *r,
+                         const auth_tcpcrypt_config_rec *conf,
+                         auth_tcpcrypt_header_rec *resp, int stale)
+{
+    char *h = malloc(1000); /* TODO */
+    
+    struct pake_info p;
+    memset(&p, 0, sizeof(p));
+    BN_CTX *ctx = BN_CTX_new();
+    BN_CTX_start(ctx);
+    assert(pake_server_init(&p, ctx));
+  
+    resp->hdr.type = HTTP_WWW_AUTHENTICATE;
+    resp->hdr.realm = "protected area";
+
+    char *s = EC_POINT_point2hex(p.public.G, p.server_state.Y,
+                                 POINT_CONVERSION_UNCOMPRESSED, ctx);
+    strcpy(resp->hdr.Y, s);
+    OPENSSL_free(s);
+    
+    tcpcrypt_http_header_stringify(h, &resp->hdr, 1);
+    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", h);
+}
 
 static void register_hooks(apr_pool_t *p)
 {
@@ -348,7 +349,7 @@ static void register_hooks(apr_pool_t *p)
 
     ap_hook_post_config(initialize_module, NULL, cfgPost, APR_HOOK_MIDDLE);
     ap_hook_child_init(initialize_child, NULL, NULL, APR_HOOK_MIDDLE);
-    ap_hook_post_read_request(parse_hdr, parsePre, NULL, APR_HOOK_MIDDLE);
+    ap_hook_post_read_request(make_header_rec, parsePre, NULL, APR_HOOK_MIDDLE);
     ap_hook_check_user_id(authenticate_tcpcrypt_user, NULL, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_fixups(add_auth_info, NULL, NULL, APR_HOOK_MIDDLE);
