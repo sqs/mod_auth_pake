@@ -5,6 +5,8 @@
 #include <openssl/ec.h>
 #include <openssl/sha.h>
 
+#define RESP_LENGTH 64 /* length of hex-encoded SHA256 hash (respc, resps) */
+
 struct pake_public_info {
     EC_GROUP *G;
     EC_POINT *U;
@@ -28,8 +30,8 @@ struct pake_shared_info {
 
     unsigned char h[SHA256_DIGEST_LENGTH]; /* = H(\pi_0, X, Y, Z, N) */
 
-    unsigned char respc[SHA256_DIGEST_LENGTH]; /* = H(h, TAG_CLIENT | sid) */
-    unsigned char resps[SHA256_DIGEST_LENGTH]; /* = H(h, TAG_SERVER | sid) */
+    unsigned char respc[RESP_LENGTH]; /* = H(h, TAG_CLIENT | sid) */
+    unsigned char resps[RESP_LENGTH]; /* = H(h, TAG_SERVER | sid) */
 };
 
 struct pake_client_info {

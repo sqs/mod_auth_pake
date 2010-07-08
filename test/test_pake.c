@@ -3,7 +3,6 @@
 #include <string.h>
 #include <assert.h>
 #include <openssl/bn.h>
-#include <openssl/sha.h>
 
 void test_pake() {
     struct pake_info ps, pc;
@@ -42,9 +41,9 @@ void test_pake() {
     assert(tcpcrypt_pake_compute_resps(&pc, sid, ctx));
     assert(tcpcrypt_pake_compute_respc(&pc, sid, ctx));
     
-    assert(strncmp((char *)ps.shared.resps, (char *)pc.shared.resps, SHA256_DIGEST_LENGTH) == 0);
-    assert(strncmp((char *)ps.shared.respc, (char *)pc.shared.respc, SHA256_DIGEST_LENGTH) == 0);
-    assert(strncmp((char *)ps.shared.resps, (char *)ps.shared.respc, SHA256_DIGEST_LENGTH) != 0); /* shouldn't be equal - this will fail once per universe */
+    assert(strncmp((char *)ps.shared.resps, (char *)pc.shared.resps, RESP_LENGTH) == 0);
+    assert(strncmp((char *)ps.shared.respc, (char *)pc.shared.respc, RESP_LENGTH) == 0);
+    assert(strncmp((char *)ps.shared.resps, (char *)ps.shared.respc, RESP_LENGTH) != 0); /* shouldn't be equal - this will fail once per universe */
 
     BN_CTX_end(ctx);
     BN_CTX_free(ctx);

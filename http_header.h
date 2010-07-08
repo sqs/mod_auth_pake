@@ -3,6 +3,7 @@
 
 #include <openssl/ec.h>
 #include <openssl/sha.h>
+#include "pake.h"
 
 #define MAX_BN_STRING_LENGTH 100
 #define MAX_EC_POINT_STRING_LENGTH (MAX_BN_STRING_LENGTH*2 + 3)
@@ -20,8 +21,8 @@ struct tcpcrypt_http_header {
     char *realm;
     char X[MAX_EC_POINT_STRING_LENGTH];
     char Y[MAX_EC_POINT_STRING_LENGTH];
-    char respc[1000]; /* TODO: find exact len of hex SHA256 hash val */
-    char resps[1000]; 
+    char respc[RESP_LENGTH];
+    char resps[RESP_LENGTH]; 
 };
 
 /* Parses header value (only the part after the ":", not the whole line) into

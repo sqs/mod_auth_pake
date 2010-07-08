@@ -323,18 +323,18 @@ static int authenticate_tcpcrypt_user(request_rec *r)
          */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-
-    const char *exp_response;
-
-    exp_response = get_userpw_hash(r, resp, conf);
-    if (!exp_response) {
-        /* we failed to allocate a client struct */
+    
+    if (!tcpcrypt_pake_compute_respc(&conf->pake, tcpcrypt_get_sid(), conf->bn_ctx)) {
+        /* failed to compute respc */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    if (0 /* TODO2 */) {
+
+    char *exp_respc = conf->pake.shared.respc;
+    char *client_respc = resp->hdr.respc;
+    if (strcmp(exp_respc, client_respc)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
-                      r->uri);
+                      "auth_tcpcrypt: user %s: respc mismatch: expected '%s', got '%s'",
+                      r->user, exp_respc, client_respc);
         make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
@@ -354,23 +354,26 @@ static int add_auth_info(request_rec *r)
     auth_tcpcrypt_header_rec *resp =
                 (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
                                                            &auth_tcpcrypt_module);
-    const char *ai = NULL, *resp_dig = NULL;
+    char *ai, *resp_dig = NULL;
 
     if (resp == NULL || !resp->needed_auth || conf == NULL) {
         return OK;
     }
 
-    resp_dig = get_userpw_hash(r, resp, conf);
-    if (!resp_dig) {
+    tcpcrypt_pake_compute_resps(&conf->pake, tcpcrypt_get_sid(), conf->bn_ctx);
+    
+    if (!conf->pake.shared.resps) {
         /* we failed to allocate a client struct */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
     /* assemble Authentication-Info header
      */
-    ai = apr_pstrcat(r->pool,
-                     "rspauth=\"", resp_dig, "\"",
-                     NULL);
+    struct tcpcrypt_http_header hdr;
+    hdr.type = HTTP_AUTHENTICATION_INFO;
+    strcpy(hdr.resps, "asdf");
+    ai = malloc(1000); /* TODO2: allocate in apr pool */
+    tcpcrypt_http_header_stringify(ai, &hdr, 1);
 
     if (ai && ai[0]) {
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);

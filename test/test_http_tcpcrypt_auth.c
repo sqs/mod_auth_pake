@@ -215,14 +215,15 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
     OPENSSL_free(s);
     
     tcpcrypt_pake_compute_respc(&pc, tcpcrypt_get_sid(), ctx);
-    const char *hex = "0123456789ABCDEF";
-    int i = 0;
-    s = req_hdr.respc;
-    for (i=0; i < SHA256_DIGEST_LENGTH; ++i) {
-        *s++ = hex[pc.shared.respc[i] >> 4];
-        *s++ = hex[pc.shared.respc[i] & 0xF];
-    }
-    *s++ = '\0';
+    strcpy(req_hdr.respc, (char *)pc.shared.respc);
+    /* const char *hex = "0123456789ABCDEF"; */
+    /* int i = 0; */
+    /* s = req_hdr.respc; */
+    /* for (i=0; i < SHA256_DIGEST_LENGTH; ++i) { */
+    /*     *s++ = hex[pc.shared.respc[i] >> 4]; */
+    /*     *s++ = hex[pc.shared.respc[i] & 0xF]; */
+    /* } */
+    /* *s++ = '\0'; */
 
     assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
     printf("make auth hdr: '%s'\n", header_line);

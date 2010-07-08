@@ -383,6 +383,9 @@ int tcpcrypt_pake_compute_respc(struct pake_info *p, unsigned long tcpcrypt_sid,
 
 int tcpcrypt_pake_compute_resp(struct pake_info *p, unsigned long tcpcrypt_sid, int is_resps, BN_CTX *ctx) {
     int ret = 0;
+    const char *hex = "0123456789ABCDEF";
+    unsigned char resp[SHA256_DIGEST_LENGTH];
+    unsigned char *s;
     unsigned char tag;
     SHA256_CTX sha;
 
@@ -396,7 +399,16 @@ int tcpcrypt_pake_compute_resp(struct pake_info *p, unsigned long tcpcrypt_sid, 
     if (!SHA256_Update(&sha, p->shared.h, sizeof(p->shared.h))) goto err;
     if (!SHA256_Update(&sha, &tcpcrypt_sid, sizeof(tcpcrypt_sid))) goto err; /* TODO: non-portable to read bytes of long -- two sides of connection could have different endianness */
     if (!SHA256_Update(&sha, &tag, sizeof(tag))) goto err;
-    if (!SHA256_Final(is_resps ? p->shared.resps : p->shared.respc, &sha)) goto err;
+    if (!SHA256_Final(resp, &sha)) goto err;
+
+    /* convert to hex */
+    int i = 0;
+    s = is_resps ? p->shared.resps : p->shared.respc;
+    for (i=0; i < SHA256_DIGEST_LENGTH; ++i) {
+        *s++ = hex[resp[i] >> 4];
+        *s++ = hex[resp[i] & 0xF];
+    }
+    *s++ = '\0';
 
     ret = 1;
 

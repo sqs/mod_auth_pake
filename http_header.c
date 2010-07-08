@@ -64,10 +64,10 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
                     strncpy(hdr->Y, content, MAX_EC_POINT_STRING_LENGTH);
                     assert(hdr->Y);
                 } else if (strcmp(value, "respc") == 0) {
-                    strncpy(hdr->respc, content, SHA256_DIGEST_LENGTH);
+                    strncpy(hdr->respc, content, RESP_LENGTH);
                     assert(hdr->respc);
                 } else if (strcmp(value, "resps") == 0) {
-                    strncpy(hdr->resps, content, SHA256_DIGEST_LENGTH);
+                    strncpy(hdr->resps, content, RESP_LENGTH);
                     assert(hdr->resps);
                 } else {
                     fprintf(stderr, "unknown kv pair: %s\n", value);
