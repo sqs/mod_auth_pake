@@ -1,5 +1,7 @@
 #include "apache2_module_init.h"
 
+#include <ctype.h>
+
 
 /* client-list, opaque, and one-time-nonce stuff */
 
@@ -214,13 +216,22 @@ void *create_auth_tcpcrypt_dir_config(apr_pool_t *p, char *dir)
 
 const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
 {
+    int i;
     auth_tcpcrypt_config_rec *conf = (auth_tcpcrypt_config_rec *) config;
 
-    /* The core already handles the realm, but it's just too convenient to
-     * grab it ourselves too and cache some setups. However, we need to
-     * let the core get at it too, which is why we decline at the end -
-     * this relies on the fact that http_core is last in the list.
-     */
+    /* Only allow [a-zA-Z0-9 _] in realm. This means we don't have to escape
+       the realm string on the server side. Of course, clients can send back a
+       bad realm in the Authorization: header, but we can reject it instead of
+       having to unescape it and/or reject it. */
+    for (i = 0; i < strlen(realm); ++i) {
+        char c = realm[i];
+        if (!isalnum(c) && c != ' ' && c != '_') {
+            return apr_psprintf(cmd->pool, 
+                                "Invalid AuthName '%s': must only contain [a-zA-Z0-9 _]",
+                                realm);
+        }
+    }
+    
     conf->realm = realm;
 
     return DECLINE_CMD;
