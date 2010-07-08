@@ -218,7 +218,7 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr) {
     strcpy(req_hdr.respc, (char *)pc.shared.respc);
 
     assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
-    printf("make auth hdr: '%s'\n", header_line);
+    if (detailed) printf("make auth hdr: '%s'\n", header_line);
 }
 
 void set_auth_hdr(CURL *curl_, char *auth_hdr) {
