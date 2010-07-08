@@ -307,10 +307,10 @@ void test_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
     TEST_ASSERT(hdr.username == NULL);
     TEST_ASSERT_STREQ(hdr.realm, "protected area");
-    TEST_ASSERT(hdr.X == NULL);
+    TEST_ASSERT(strlen(hdr.X) == 0);
     TEST_ASSERT_STREQ(hdr.Y, "0123456789abcdef");
-    TEST_ASSERT(hdr.respc == NULL);
-    TEST_ASSERT(hdr.resps == NULL);
+    TEST_ASSERT(strlen(hdr.respc) == 0);
+    TEST_ASSERT(strlen(hdr.resps) == 0);
 
     /* stringify test */
     CLEAR_HEADER(hdr);
