@@ -41,6 +41,7 @@ int pake_server_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
     p->isserver = 1;
+    memset(p, 0, sizeof(p));
 
     if (!pake_init_public(p, ctx)) goto err;
     if (!pake_init_shared(p, ctx)) goto err;
@@ -55,7 +56,8 @@ int pake_server_init(struct pake_info *p, BN_CTX *ctx) {
 int pake_client_init(struct pake_info *p, BN_CTX *ctx) {
     int ret = 0;
 
-    p->isclient = 1;    
+    p->isclient = 1;
+    memset(p, 0, sizeof(p));
 
     if (!pake_init_public(p, ctx)) goto err;
     if (!pake_init_shared(p, ctx)) goto err;
@@ -383,6 +385,8 @@ int tcpcrypt_pake_compute_resp(struct pake_info *p, unsigned long tcpcrypt_sid, 
     unsigned char *s;
     unsigned char tag;
     SHA256_CTX sha;
+
+    pake_compute_h(p, ctx);
 
     /* TODO: QUESTION: Why is it H(h, TAG|sid) and not just H(h, TAG, sid)?
        Does OR'ing the values have a special purpose? For now, this code
