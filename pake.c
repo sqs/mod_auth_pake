@@ -223,12 +223,9 @@ int pake_server_init_state(struct pake_info *p, BN_CTX *ctx) {
        per-client state -- fix this */
     if (!BN_hex2bn(&p->server_state.beta, "7417A0A2C9824875508F1524C28FBA21F49562B89D86D15530BFF792EBBB8BDD")) goto err;
  
-
     /* compute Y */
     if (!EC_POINT_mul(p->public.G, Y2, p->server_state.beta, NULL, NULL, ctx)) goto err;
-    debug_point(p->public.G, "server Y2", Y2, ctx);
     if (!EC_POINT_add(p->public.G, p->server_state.Y, Y2, p->shared.V_pi_0, ctx)) goto err;
-    debug_point(p->public.G, "server Y", p->server_state.Y, ctx);
 
     ret = 1;
 
@@ -264,9 +261,7 @@ int pake_client_init_state(struct pake_info *p, BN_CTX *ctx) {
 
     /* compute Y */
     if (!EC_POINT_mul(p->public.G, X2, p->client_state.alpha, NULL, NULL, ctx)) goto err;
-    debug_point(p->public.G, "client X2", X2, ctx);
     if (!EC_POINT_add(p->public.G, p->client_state.X, X2, p->shared.U_pi_0, ctx)) goto err;
-    debug_point(p->public.G, "client X", p->client_state.X, ctx);
 
     ret = 1;
 
