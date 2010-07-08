@@ -280,6 +280,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
 
 static int add_auth_info(request_rec *r)
 {
+    struct tcpcrypt_http_header hdr;
     auth_tcpcrypt_config_rec *conf =
         (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
                                                           &auth_tcpcrypt_module);
@@ -301,7 +302,6 @@ static int add_auth_info(request_rec *r)
 
     /* assemble Authentication-Info header
      */
-    struct tcpcrypt_http_header hdr;
     hdr.type = HTTP_AUTHENTICATION_INFO;
     strcpy(hdr.resps, conf->pake.shared.resps);
     ai = apr_palloc(r->pool, TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH);
