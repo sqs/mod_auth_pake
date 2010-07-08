@@ -284,6 +284,29 @@ void test_apache_rejects_bad_username(void) {
 }
 
 
+void test_apache_rejects_bad_realm(void) {
+    struct http_request req;
+    struct http_response res;
+    struct tcpcrypt_http_header hdr;
+    CLEAR_HEADER(hdr);
+    
+    req.url = TEST_PROTECTED_URL;
+    do_http_request(&req, &res);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
+    TEST_ASSERT(res.status == 401);
+
+    char auth_hdr[1000], exp_resps[RESP_LENGTH];
+    make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, "badrealm", TEST_PW1);
+    set_auth_hdr(curl, auth_hdr);
+
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 401);
+    
+    /* check resps */
+    CLEAR_HEADER(hdr);
+    assert(!header_val(&res, "Authentication-Info:"));
+}
+
 void test_gets_root_unauthenticated(void) {
     struct http_request req;
     struct http_response res;
@@ -326,6 +349,7 @@ static struct test _tests[] = {
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_apache_rejects_bad_username, "test_apache_rejects_bad_username" },
+    { test_apache_rejects_bad_realm, "test_apache_rejects_bad_realm" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
