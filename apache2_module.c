@@ -22,15 +22,18 @@ static int get_digest_rec(request_rec *r, auth_tcpcrypt_header_rec *resp)
         return !OK;
     }
 
-    resp->hdr.auth_name = ap_getword_white(r->pool, &auth_line);
-    if (strcasecmp(resp->hdr.auth_name, "Tcpcrypt")) {
+    tcpcrypt_http_header_parse(&resp->hdr, auth_line, HTTP_AUTHORIZATION);
+    
+    if (!resp->hdr.auth_name || strcasecmp(resp->hdr.auth_name, "Tcpcrypt")) {
         resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
         return !OK;
     }
 
-    tcpcrypt_http_header_parse(&resp->hdr, auth_line, HTTP_AUTHORIZATION);
-
     if (!resp->hdr.username || !resp->hdr.realm || !resp->hdr.X || !resp->hdr.respc) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "Missing field in Authorization header: '%s'", auth_line);
+        
+
         resp->auth_hdr_sts = INVALID;
         return !OK;
     }
@@ -65,40 +68,6 @@ static int parse_hdr(request_rec *r)
     return DECLINED;
 }
 
-
-/*
- * Nonce generation code
- */
-
-/* The hash part of the nonce is a SHA-1 hash of the time, realm, server host
- * and port, opaque, and our secret.
- */
-static void gen_nonce_hash(char *hash, const char *timestr,
-                           const server_rec *server,
-                           const auth_tcpcrypt_config_rec *conf)
-{
-    const char *hex = "0123456789abcdef";
-    unsigned char sha1[APR_SHA1_DIGESTSIZE];
-    apr_sha1_ctx_t ctx;
-    int idx;
-
-
-    /*
-    apr_sha1_update_binary(&ctx, (const unsigned char *) server->server_hostname,
-                         strlen(server->server_hostname));
-    apr_sha1_update_binary(&ctx, (const unsigned char *) &server->port,
-                         sizeof(server->port));
-     */
-    /* apr_sha1_update_binary(&ctx, (const unsigned char *) timestr, strlen(timestr)); */
-    /* apr_sha1_final(sha1, &ctx); */
-
-    /* for (idx=0; idx<APR_SHA1_DIGESTSIZE; idx++) { */
-    /*     *hash++ = hex[sha1[idx] >> 4]; */
-    /*     *hash++ = hex[sha1[idx] & 0xF]; */
-    /* } */
-
-    /* *hash++ = '\0'; */
-}
 
 /*
  * Authorization challenge generation code (for WWW-Authenticate)
@@ -187,6 +156,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *user,
 
     if (auth_result == AUTH_USER_FOUND) {
         /* TODO2: get user pake info */
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "AUTH_USER_FOUND for user: '%s'", user);
     }
 
     return auth_result;
@@ -258,7 +228,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     int                res;
     authn_status       return_code;
 
-    /* do we require Digest auth for this URI? */
+    /* do we require Tcpcrypt auth for this URI? */
 
     if (!(t = ap_auth_type(r)) || strcasecmp(t, "Tcpcrypt")) {
         /* XXX shouldn't print client input to log - remove this once it's fixed */
@@ -318,68 +288,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
 
     /* check the auth attributes */
 
-    if (strcmp(resp->uri, resp->raw_request_uri)) {
-        /* Hmm, the simple match didn't work (probably a proxy modified the
-         * request-uri), so lets do a more sophisticated match
-         */
-        apr_uri_t r_uri, d_uri;
-
-        copy_uri_components(&r_uri, resp->psd_request_uri, r);
-        if (apr_uri_parse(r->pool, resp->uri, &d_uri) != APR_SUCCESS) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: invalid uri <%s> in Authorization header",
-                          resp->uri);
-            return HTTP_BAD_REQUEST;
-        }
-
-        if (d_uri.hostname) {
-            ap_unescape_url(d_uri.hostname);
-        }
-        if (d_uri.path) {
-            ap_unescape_url(d_uri.path);
-        }
-
-        if (d_uri.query) {
-            ap_unescape_url(d_uri.query);
-        }
-
-        if (r->method_number == M_CONNECT) {
-            if (!r_uri.hostinfo || strcmp(resp->uri, r_uri.hostinfo)) {
-                ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                              "auth_tcpcrypt: uri mismatch - <%s> does not match "
-                              "request-uri <%s>", resp->uri, r_uri.hostinfo);
-                return HTTP_BAD_REQUEST;
-            }
-        }
-        else if (
-            /* check hostname matches, if present */
-            (d_uri.hostname && d_uri.hostname[0] != '\0'
-              && strcasecmp(d_uri.hostname, r_uri.hostname))
-            /* check port matches, if present */
-            || (d_uri.port_str && d_uri.port != r_uri.port)
-            /* check that server-port is default port if no port present */
-            || (d_uri.hostname && d_uri.hostname[0] != '\0'
-                && !d_uri.port_str && r_uri.port != ap_default_port(r))
-            /* check that path matches */
-            || (d_uri.path != r_uri.path
-                /* either exact match */
-                && (!d_uri.path || !r_uri.path
-                    || strcmp(d_uri.path, r_uri.path))
-                /* or '*' matches empty path in scheme://host */
-                && !(d_uri.path && !r_uri.path && resp->psd_request_uri->hostname
-                    && d_uri.path[0] == '*' && d_uri.path[1] == '\0'))
-            /* check that query matches */
-            || (d_uri.query != r_uri.query
-                && (!d_uri.query || !r_uri.query
-                    || strcmp(d_uri.query, r_uri.query)))
-            ) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: uri mismatch - <%s> does not match "
-                          "request-uri <%s>", resp->uri, resp->raw_request_uri);
-            return HTTP_BAD_REQUEST;
-        }
-    }
-
     if (strcmp(resp->hdr.realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
@@ -423,11 +331,11 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         /* we failed to allocate a client struct */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    if (/* correct respc */0) {
+    if (0 /* TODO2 */) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user %s: password mismatch: %s", r->user,
                       r->uri);
-        note_digest_auth_failure(r, conf, resp, 0);
+        make_auth_challenge(r, conf, resp, 0);
         return HTTP_UNAUTHORIZED;
     }
 
