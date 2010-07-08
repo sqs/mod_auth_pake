@@ -101,19 +101,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 }
 
 
-/* These functions return 0 if client is OK, and proper error status
- * if not... either HTTP_UNAUTHORIZED, if we made a check, and it failed, or
- * HTTP_INTERNAL_SERVER_ERROR, if things are so totally confused that we
- * couldn't figure out how to tell if the client is authorized or not.
- *
- * If they return DECLINED, and all other modules also decline, that's
- * treated by the server core as a configuration error, logged and
- * reported as such.
- */
-
-/* Determine user ID, and check if the attributes are correct, if it
- * really is that user, if the nonce is correct, etc.
- */
+/* Determine user ID, and check if the attributes are correct. */
 
 static int authenticate_tcpcrypt_user(request_rec *r)
 {
