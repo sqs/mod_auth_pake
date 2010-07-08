@@ -116,25 +116,17 @@ void headers_inspect(struct http_response *res) {
 
 /* Returns the NULL-terminated value of the HTTP header with name `k`,
    or NULL if it's not found. */
-char *header_val(struct http_response *res, char *k) {
-    char *header_prefix;
+char *header_val(struct http_response *res, char *header_prefix) {
     struct curl_slist *e;
-    
-    header_prefix = malloc(strlen(k) + 2); // len + ':' + '\0'
-    strcpy(header_prefix, k);
-    strcat(header_prefix, ":");
     
     char *header_line = NULL;
     for (e = res->headers; e != NULL; e = e->next) {
        header_line = e->data;
         if (strncmp(header_prefix, header_line, strlen(header_prefix)) == 0) {
-            header_line += strlen(header_prefix);
-            break;
+            return header_line + strlen(header_prefix); /* begin after ":" */
         }
     }
-
-    free(header_prefix);
-    return header_line;
+    return NULL;
 }
 
 void do_http_request(struct http_request *req, struct http_response *res) {
@@ -181,10 +173,10 @@ void test_apache_www_authenticate_hdr(void) {
     
     req.url = TEST_PROTECTED_URL;
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
-    char *www_auth = header_val(&res, "WWW-Authenticate");
+    char *www_auth = header_val(&res, "WWW-Authenticate:");
     if (detailed) fprintf(stderr, "%s\n", www_auth);
     TEST_ASSERT(www_auth != NULL);
 
@@ -200,13 +192,13 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT(hdr.respc[0] == '\0');
 }
 
-void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char *exp_resps) {
+void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char *exp_resps, char *username, char *realm, char *password) {
     struct tcpcrypt_http_header req_hdr;
     CLEAR_HEADER(req_hdr);
 
     req_hdr.type = HTTP_AUTHORIZATION;
-    req_hdr.username = TEST_USER1;
-    req_hdr.realm = TEST_REALM1;
+    req_hdr.username = username;
+    req_hdr.realm = realm;
 
     struct pake_info pc;
     BN_CTX *ctx = NULL;
@@ -250,13 +242,13 @@ void test_apache_authorizes(void) {
     
     req.url = TEST_PROTECTED_URL;
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     
     if (detailed) tcpcrypt_http_header_inspect(&hdr);
 
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
-    make_auth_hdr(auth_hdr, &hdr, exp_resps);
+    make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, TEST_REALM1, TEST_PW1);
     set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
@@ -264,9 +256,33 @@ void test_apache_authorizes(void) {
     
     /* check resps */
     CLEAR_HEADER(hdr);
-    get_hdr("Authentication-Info", HTTP_AUTHENTICATION_INFO, &req, &res, &hdr);
+    get_hdr("Authentication-Info:", HTTP_AUTHENTICATION_INFO, &req, &res, &hdr);
     TEST_ASSERT_STREQ(exp_resps, hdr.resps);
 }
+
+void test_apache_rejects_bad_username(void) {
+    struct http_request req;
+    struct http_response res;
+    struct tcpcrypt_http_header hdr;
+    CLEAR_HEADER(hdr);
+    
+    req.url = TEST_PROTECTED_URL;
+    do_http_request(&req, &res);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
+    TEST_ASSERT(res.status == 401);
+
+    char auth_hdr[1000], exp_resps[RESP_LENGTH];
+    make_auth_hdr(auth_hdr, &hdr, exp_resps, "baduser", TEST_REALM1, TEST_PW1);
+    set_auth_hdr(curl, auth_hdr);
+
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 401);
+    
+    /* check resps */
+    CLEAR_HEADER(hdr);
+    assert(!header_val(&res, "Authentication-Info:"));
+}
+
 
 void test_gets_root_unauthenticated(void) {
     struct http_request req;
@@ -309,6 +325,7 @@ static struct test _tests[] = {
     { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
+    { test_apache_rejects_bad_username, "test_apache_rejects_bad_username" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */

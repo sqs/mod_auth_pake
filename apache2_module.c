@@ -23,6 +23,7 @@ static int make_header_rec(request_rec *r)
     resp->raw_request_uri = r->unparsed_uri;
     resp->psd_request_uri = &r->parsed_uri;
     resp->needed_auth = 0;
+    resp->auth_ok = 0;
     resp->method = r->method;
     ap_set_module_config(r->request_config, &auth_tcpcrypt_module, resp);
 
@@ -94,8 +95,6 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
         authn_result = AUTH_USER_FOUND;
     } else {
         authn_result = AUTH_USER_NOT_FOUND;
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "get_user_pake_info: user not found: '%s'", username);
     }
 
     return authn_result;
@@ -150,7 +149,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     resp = (auth_tcpcrypt_header_rec *) ap_get_module_config(mainreq->request_config,
                                                       &auth_tcpcrypt_module);
     resp->needed_auth = 1;
-
 
     /* get our conf */
 
@@ -233,6 +231,8 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_UNAUTHORIZED;
     }
 
+    resp->auth_ok = 1;
+
     return OK;
 }
 
@@ -251,7 +251,7 @@ static int add_auth_info(request_rec *r)
                                                           &auth_tcpcrypt_module);
     char *ai, *resp_dig = NULL;
 
-    if (resp == NULL || !resp->needed_auth || conf == NULL) {
+    if (resp == NULL || !resp->needed_auth || conf == NULL || !resp->auth_ok) {
         return OK;
     }
 

@@ -81,6 +81,7 @@ typedef struct auth_tcpcrypt_header_struct {
     const char           *raw_request_uri;
     apr_uri_t            *psd_request_uri;
     int                   needed_auth;
+    int                   auth_ok;
     client_entry         *client;
 } auth_tcpcrypt_header_rec;
 
