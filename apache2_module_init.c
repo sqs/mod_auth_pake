@@ -236,4 +236,3 @@ const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
 
     return DECLINE_CMD;
 }
-

@@ -49,16 +49,6 @@
 #define SECRET_LEN      20
 
 
-/* struct to hold the configuration info */
-
-typedef struct auth_tcpcrypt_config_struct {
-    const char  *dir_name;
-    authn_provider_list *providers;
-    const char  *realm;
-
-    BN_CTX      *bn_ctx;
-    struct pake_info pake;
-} auth_tcpcrypt_config_rec;
 
 
 /* client list definitions */

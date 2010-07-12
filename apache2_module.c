@@ -4,7 +4,7 @@
 #include "tcpcrypt_session.h"
 #include <assert.h>
 
-#define APLOG(s) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, s)
+#define APLOG(s...) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, s)
 #define LOG_PAKE 1
 
 int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
@@ -102,6 +102,8 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 
     /* TODO: obviously un-hardcode */
     if (username && strncmp(username, "jsmith", strlen("jsmith")) == 0) {
+        APLOG("pakefile = %s", conf->pakefile);
+
         if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                                     "--------------- username = '%s'", username);
 
@@ -358,7 +360,8 @@ void make_stage2_auth_challenge(request_rec *r,
                          const auth_tcpcrypt_config_rec *conf,
                          auth_tcpcrypt_header_rec *resp)
 {
-    char *Yhex = NULL, *header_line = NULL, *username = NULL;
+    char *Yhex = NULL, *header_line = NULL;
+    const char *username = NULL;
     BN_CTX *ctx = NULL;
 
     username = resp->hdr.username;
