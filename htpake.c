@@ -32,13 +32,15 @@ int main(int argc, char **argv) {
         printf("pake_client_set_credentials error\n");
         exit(1);
     }
+
+    printf("%s ", user);
     
     s = BN_bn2hex(pake.shared.pi_0);
-    printf("pi_0 = %s\n", s);
+    printf("%s ", s);
     OPENSSL_free(s);
 
     s = EC_POINT_point2hex(pake.public.G, pake.shared.L, POINT_CONVERSION_UNCOMPRESSED, ctx);
-    printf("L    = %s\n", s);
+    printf("%s\n", s);
     OPENSSL_free(s);
     
     BN_CTX_end(ctx);
