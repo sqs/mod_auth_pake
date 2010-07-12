@@ -100,76 +100,71 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
         return AUTH_USER_NOT_FOUND;
     }
 
-    /* TODO: obviously un-hardcode */
-    if (username && strncmp(username, "jsmith", strlen("jsmith")) == 0) {
-        APLOG("pakefile = %s", conf->pakefile);
+    APLOG("pakefile = %s", conf->pakefile);
 
-        ap_configfile_t *f;
-        char l[MAX_STRING_LEN];
-        apr_status_t status;
-        char *file_pi_0 = NULL, *file_L = NULL;
+    ap_configfile_t *f;
+    char l[MAX_STRING_LEN];
+    apr_status_t status;
+    char *file_pi_0 = NULL, *file_L = NULL;
 
-        /* following code to read file is from mod_authn_file.c */
-        status = ap_pcfg_openfile(&f, r->pool, conf->pakefile);
-        if (status != APR_SUCCESS) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, status, r,
-                          "could not open PAKEFile: %s", conf->pakefile);
-            return AUTH_GENERAL_ERROR;
-        }
+    /* following code to read file is from mod_authn_file.c */
+    status = ap_pcfg_openfile(&f, r->pool, conf->pakefile);
+    if (status != APR_SUCCESS) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, status, r,
+                      "could not open PAKEFile: %s", conf->pakefile);
+        return AUTH_GENERAL_ERROR;
+    }
 
-        while(!(ap_cfg_getline(l, MAX_STRING_LEN, f))) {
-            const char *rpw, *w;
+    while(!(ap_cfg_getline(l, MAX_STRING_LEN, f))) {
+        const char *rpw, *w;
             
-            /* Skip # or blank lines. */
-            if ((l[0] == '#') || (!l[0])) {
-                continue;
-            }
+        /* Skip # or blank lines. */
+        if ((l[0] == '#') || (!l[0])) {
+            continue;
+        }
 
-            rpw = l;
-            w = ap_getword(r->pool, &rpw, ' ');
+        rpw = l;
+        w = ap_getword(r->pool, &rpw, ' ');
             
-            if (!strcmp(username, w)) {
-                file_pi_0 = ap_getword(r->pool, &rpw, ' ');
-                file_L = ap_getword(r->pool, &rpw, ' ');
-                break;
-            }
+        if (!strcmp(username, w)) {
+            file_pi_0 = ap_getword(r->pool, &rpw, ' ');
+            file_L = ap_getword(r->pool, &rpw, ' ');
+            break;
         }
-        ap_cfg_closefile(f);
+    }
+    ap_cfg_closefile(f);
 
-        if (!file_pi_0 || !file_L) {
-            return AUTH_USER_NOT_FOUND;
-        }
+    if (!file_pi_0 || !file_L) {
+        return AUTH_USER_NOT_FOUND;
+    }
 
-        if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                    "--------------- username = '%s'", username);
+    if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                "--------------- username = '%s'", username);
 
-        BIGNUM *pi_0 = BN_new();
-        assert(BN_hex2bn(&pi_0, file_pi_0));
-        assert(conf->pake.public.G);
+    BIGNUM *pi_0 = BN_new();
+    assert(BN_hex2bn(&pi_0, file_pi_0));
+    assert(conf->pake.public.G);
 
-        EC_POINT *L = EC_POINT_new(conf->pake.public.G);
-        EC_POINT_hex2point(conf->pake.public.G, file_L, L, conf->bn_ctx);
-        assert(L);
+    EC_POINT *L = EC_POINT_new(conf->pake.public.G);
+    EC_POINT_hex2point(conf->pake.public.G, file_L, L, conf->bn_ctx);
+    assert(L);
         
-        if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
-                                    "L = %s, pi_0 = %s", 
-                                    EC_POINT_point2hex(conf->pake.public.G, L,
-                                                       POINT_CONVERSION_UNCOMPRESSED,
-                                                       conf->bn_ctx),
-                                    BN_bn2hex(pi_0));
+    if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                                "L = %s, pi_0 = %s", 
+                                EC_POINT_point2hex(conf->pake.public.G, L,
+                                                   POINT_CONVERSION_UNCOMPRESSED,
+                                                   conf->bn_ctx),
+                                BN_bn2hex(pi_0));
 
-        /* TODO: in pake.c, this is currently also hardcoded -- change it there, too */
-        if (!pake_server_set_credentials(&conf->pake, "jsmith", "protected area",
-                                         pi_0, L, conf->bn_ctx)) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
-                          "auth_tcpcrypt: couldn't set server credentials: %s", r->uri);
-            return AUTH_USER_NOT_FOUND;
-        }
+    /* TODO: in pake.c, this is currently also hardcoded -- change it there, too */
+    if (!pake_server_set_credentials(&conf->pake, "jsmith", "protected area",
+                                     pi_0, L, conf->bn_ctx)) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                      "auth_tcpcrypt: couldn't set server credentials: %s", r->uri);
+        return AUTH_USER_NOT_FOUND;
+    }
 
-        return AUTH_USER_FOUND;
-    } 
-
-    return AUTH_USER_NOT_FOUND;
+    return AUTH_USER_FOUND;
 }
 
 
