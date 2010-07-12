@@ -2,49 +2,9 @@
 
 #include <ctype.h>
 
-
-/* client-list, opaque, and one-time-nonce stuff */
-
-#define DEF_SHMEM_SIZE  1000L           /* ~ 12 entries */
-#define DEF_NUM_BUCKETS 15L
-#define HASH_DEPTH      5
-
-static long shmem_size  = DEF_SHMEM_SIZE;
-static long num_buckets = DEF_NUM_BUCKETS;
-
-/* client list definitions */
-
-static struct hash_table {
-    client_entry  **table;
-    unsigned long   tbl_len;
-    unsigned long   num_entries;
-    unsigned long   num_created;
-    unsigned long   num_removed;
-    unsigned long   num_renewed;
-} *client_list;
-
 /*
  * initialization code
  */
-
-static apr_status_t cleanup_tables(void *not_used)
-{
-    ap_log_error(APLOG_MARK, APLOG_STARTUP, 0, NULL,
-                  "auth_tcpcrypt: cleaning up shared memory");
-    fflush(stderr);
-
-    if (client_shm) {
-        apr_shm_destroy(client_shm);
-        client_shm = NULL;
-    }
-
-    if (client_lock) {
-        apr_global_mutex_destroy(client_lock);
-        client_lock = NULL;
-    }
-
-    return APR_SUCCESS;
-}
 
 static apr_status_t initialize_secret(server_rec *s)
 {
@@ -72,76 +32,11 @@ static apr_status_t initialize_secret(server_rec *s)
     return APR_SUCCESS;
 }
 
-static void log_error_and_cleanup(char *msg, apr_status_t sts, server_rec *s)
-{
-    ap_log_error(APLOG_MARK, APLOG_ERR, sts, s,
-                 "auth_tcpcrypt: %s - all nonce-count checking and " \
-                 "one-time nonces disabled", msg);
-
-    cleanup_tables(NULL);
-}
-
-#if APR_HAS_SHARED_MEMORY
-
-static void initialize_tables(server_rec *s, apr_pool_t *ctx)
-{
-    unsigned long idx;
-    apr_status_t   sts;
-
-    /* set up client list */
-
-    sts = apr_shm_create(&client_shm, shmem_size, tmpnam(NULL), ctx);
-    if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to create shared memory segments", sts, s);
-        return;
-    }
-
-    client_list = apr_rmm_malloc(client_rmm, sizeof(*client_list) +
-                                            sizeof(client_entry*)*num_buckets);
-    if (!client_list) {
-        log_error_and_cleanup("failed to allocate shared memory", -1, s);
-        return;
-    }
-    client_list->table = (client_entry**) (client_list + 1);
-    for (idx = 0; idx < num_buckets; idx++) {
-        client_list->table[idx] = NULL;
-    }
-    client_list->tbl_len     = num_buckets;
-    client_list->num_entries = 0;
-
-    tmpnam(client_lock_name);
-    /* FIXME: get the client_lock_name from a directive so we're portable
-     * to non-process-inheriting operating systems, like Win32. */
-    sts = apr_global_mutex_create(&client_lock, client_lock_name,
-                                  APR_LOCK_DEFAULT, ctx);
-    if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to create lock (client_lock)", sts, s);
-        return;
-    }
-
-    /* setup one-time-nonce counter */
-
-    otn_counter = apr_rmm_malloc(client_rmm, sizeof(*otn_counter));
-    if (otn_counter == NULL) {
-        log_error_and_cleanup("failed to allocate shared memory", -1, s);
-        return;
-    }
-    *otn_counter = 0;
-    /* no lock here */
-
-
-    /* success */
-    return;
-}
-
-#endif /* APR_HAS_SHARED_MEMORY */
-
-
 int initialize_module(apr_pool_t *p, apr_pool_t *plog,
                              apr_pool_t *ptemp, server_rec *s)
 {
     void *data;
-    const char *userdata_key = "auth_digest_init";
+    const char *userdata_key = "auth_tcpcrypt_init";
 
     /* initialize_module() will be called twice, and if it's a DSO
      * then all static data from the first call will be lost. Only
@@ -152,42 +47,12 @@ int initialize_module(apr_pool_t *p, apr_pool_t *plog,
                                apr_pool_cleanup_null, s->process->pool);
         return OK;
     }
+
     if (initialize_secret(s) != APR_SUCCESS) {
         return !OK;
     }
 
-#if APR_HAS_SHARED_MEMORY
-    /* Note: this stuff is currently fixed for the lifetime of the server,
-     * i.e. even across restarts. This means that A) any shmem-size
-     * configuration changes are ignored, and B) certain optimizations,
-     * such as only allocating the smallest necessary entry for each
-     * client, can't be done. However, the alternative is a nightmare:
-     * we can't call apr_shm_destroy on a graceful restart because there
-     * will be children using the tables, and we also don't know when the
-     * last child dies. Therefore we can never clean up the old stuff,
-     * creating a creeping memory leak.
-     */
-    initialize_tables(s, p);
-    apr_pool_cleanup_register(p, NULL, cleanup_tables, apr_pool_cleanup_null);
-#endif  /* APR_HAS_SHARED_MEMORY */
     return OK;
-}
-
-void initialize_child(apr_pool_t *p, server_rec *s)
-{
-    apr_status_t sts;
-
-    if (!client_shm) {
-        return;
-    }
-
-    /* FIXME: get the client_lock_name from a directive so we're portable
-     * to non-process-inheriting operating systems, like Win32. */
-    sts = apr_global_mutex_child_init(&client_lock, client_lock_name, p);
-    if (sts != APR_SUCCESS) {
-        log_error_and_cleanup("failed to create lock (client_lock)", sts, s);
-        return;
-    }
 }
 
 /*
