@@ -29,9 +29,31 @@ char *strdup(const char *str)
 
 }
 
+static void check_header(struct tcpcrypt_http_header *hdr) {
+    /* TODO */
+    if (hdr->type == HTTP_AUTHORIZATION) {
+        assert(hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) &&
+               strlen(hdr->X) && strlen(hdr->Y) == 0 && strlen(hdr->respc) &&
+               strlen(hdr->resps) == 0);
+    } else if (hdr->type == HTTP_AUTHORIZATION_USER) {
+        assert(hdr->username && strlen(hdr->username) && !hdr->realm && 
+               strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && 
+               strlen(hdr->respc) == 0 && strlen(hdr->resps) == 0);
+    } else if (hdr->type == HTTP_WWW_AUTHENTICATE) {
+        assert(hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) &&
+               strlen(hdr->X) == 0 && strlen(hdr->Y) && strlen(hdr->respc) == 0 &&
+               strlen(hdr->resps) == 0);
+    } else if (hdr->type == HTTP_AUTHENTICATION_INFO) {
+        assert(!hdr->username && !hdr->realm && 
+               strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && 
+               strlen(hdr->respc) == 0 && strlen(hdr->resps));
+    } else {
+        assert(NULL);
+    }
+}
+
 int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type type) {
-    /* TODO: check whether HTTP header keys are case sensitive */
-    
+    memset(hdr, 0, sizeof(*hdr));
     hdr->type = type;
     
     /* skip whitespaces */
@@ -90,30 +112,42 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
         goto err;
     }
 
+    /* See what kind of Authorization: header this is. */
+    if (hdr->type == HTTP_AUTHORIZATION && hdr->username &&
+        !hdr->realm && hdr->X[0] == '\0' && hdr->Y[0] == '\0' &&
+        hdr->respc[0] == '\0' && hdr->resps[0] == '\0') {
+        hdr->type = HTTP_AUTHORIZATION_USER;
+    }
+
+    check_header(hdr);
+
     return 1;
 
  err:
     return 0;
 }
 
-int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *info, int value_only) {
+int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *hdr, int value_only) {
     /* TODO: use snprintf */
     /* TODO: escape double quotes in quoted vals */
 
-    if (info->type == HTTP_WWW_AUTHENTICATE) {
-        sprintf(header_line, "%sTcpcrypt realm=\"%s\" Y=\"%s\"", 
-                value_only ? "" : "WWW-Authenticate: ", info->realm, info->Y);
-    } else if (info->type == HTTP_AUTHORIZATION) {
+    check_header(hdr);
+
+    if (hdr->type == HTTP_WWW_AUTHENTICATE) {
+        sprintf(header_line, "%sTcpcrypt realm=\"%s\" Y=\"%s\" username=\"%s\"", 
+                value_only ? "" : "WWW-Authenticate: ", hdr->realm, hdr->Y,
+                hdr->username);
+    } else if (hdr->type == HTTP_AUTHORIZATION) {
         sprintf(header_line, "%sTcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"",
                 value_only ? "" : "Authorization: ",
-                info->X, info->username, info->respc, info->realm);
-    } else if (info->type == HTTP_AUTHORIZATION_USER) {
+                hdr->X, hdr->username, hdr->respc, hdr->realm);
+    } else if (hdr->type == HTTP_AUTHORIZATION_USER) {
         sprintf(header_line, "%sTcpcrypt username=\"%s\"", 
                 value_only ? "" : "Authorization: ",
-                info->username);
-    } else if (info->type == HTTP_AUTHENTICATION_INFO) {
+                hdr->username);
+    } else if (hdr->type == HTTP_AUTHENTICATION_INFO) {
         sprintf(header_line, "%sTcpcrypt resps=\"%s\"", 
-                value_only ? "" : "Authentication-Info: ", info->resps);
+                value_only ? "" : "Authentication-Hdr: ", hdr->resps);
 
     } else {
         goto err;

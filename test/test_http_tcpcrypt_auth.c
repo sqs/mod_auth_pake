@@ -30,7 +30,9 @@ static int detailed = 0; // level of detail for tests
 #define TEST_REALM1 "protected area"
 #define TEST_PW1 "jsmith"
 
-#define CLEAR_HEADER(hdr) memset((void *)&hdr, 0, sizeof(hdr))
+void CLEAR_HEADER(struct tcpcrypt_http_header *hdr) {
+    memset(hdr, 0, sizeof(*hdr));
+}
 
 static CURL *curl;
 
@@ -155,13 +157,13 @@ void do_http_request(struct http_request *req, struct http_response *res) {
 
 void get_hdr(char *k, enum tcpcrypt_http_auth_header_type type, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
     char *header_line = header_val(res, k);
+    printf("header_line = '%s'\n", header_line);
 
     if (!header_line) {
         fprintf(stderr, "get_hdr: couldn't get header '%s'\n", k);
         return;
     }
 
-    memset(hdr, 0, sizeof(struct tcpcrypt_http_header));
     tcpcrypt_http_header_parse(hdr, header_line, type);
 }
 
@@ -173,10 +175,10 @@ void set_auth_hdr(CURL *curl_, char *auth_hdr) {
 }
 
 char *make_user_hdr(char *username) {
-    static struct tcpcrypt_http_header user_hdr;
+    struct tcpcrypt_http_header user_hdr;
     static char hdr[1000];
 
-    CLEAR_HEADER(user_hdr);
+    CLEAR_HEADER(&user_hdr);
     user_hdr.type = HTTP_AUTHORIZATION_USER;
     user_hdr.username = username;
     assert(tcpcrypt_http_header_stringify(hdr, &user_hdr, 0));
@@ -186,7 +188,7 @@ char *make_user_hdr(char *username) {
 
 void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char *exp_resps, char *username, char *realm, char *password) {
     struct tcpcrypt_http_header req_hdr;
-    CLEAR_HEADER(req_hdr);
+    CLEAR_HEADER(&req_hdr);
 
     req_hdr.type = HTTP_AUTHORIZATION;
     req_hdr.username = username;
@@ -225,8 +227,7 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char
 void test_apache_www_authenticate_hdr(void) {
     struct http_request req;
     struct http_response res;
-    struct tcpcrypt_http_header hdr;
-    CLEAR_HEADER(hdr);
+    static struct tcpcrypt_http_header hdr;
 
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_user_hdr(TEST_USER1));
@@ -246,7 +247,7 @@ void test_apache_www_authenticate_hdr(void) {
 
     TEST_ASSERT(strlen(hdr.Y) > 30);
     TEST_ASSERT_STREQ("", hdr.X);
-    TEST_ASSERT(hdr.username == NULL);
+    TEST_ASSERT(strcmp(TEST_USER1, hdr.username) == 0);
     TEST_ASSERT(hdr.resps[0] == '\0');
     TEST_ASSERT(hdr.respc[0] == '\0');
 }
@@ -254,8 +255,7 @@ void test_apache_www_authenticate_hdr(void) {
 void test_apache_authorizes(void) {
     struct http_request req;
     struct http_response res;
-    struct tcpcrypt_http_header hdr;
-    CLEAR_HEADER(hdr);
+    static struct tcpcrypt_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_user_hdr(TEST_USER1));
@@ -274,7 +274,7 @@ void test_apache_authorizes(void) {
     TEST_ASSERT(res.status == 200);
     
     /* check resps */
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     get_hdr("Authentication-Info:", HTTP_AUTHENTICATION_INFO, &req, &res, &hdr);
     TEST_ASSERT_STREQ(exp_resps, hdr.resps);
 }
@@ -283,7 +283,7 @@ void test_apache_rejects_bad_username(void) {
     struct http_request req;
     struct http_response res;
     struct tcpcrypt_http_header hdr;
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     
     req.url = TEST_PROTECTED_URL;
     do_http_request(&req, &res);
@@ -298,7 +298,7 @@ void test_apache_rejects_bad_username(void) {
     TEST_ASSERT(res.status == 401);
     
     /* check resps */
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     assert(!header_val(&res, "Authentication-Info:"));
 }
 
@@ -307,7 +307,7 @@ void test_apache_rejects_bad_realm(void) {
     struct http_request req;
     struct http_response res;
     struct tcpcrypt_http_header hdr;
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     
     req.url = TEST_PROTECTED_URL;
     do_http_request(&req, &res);
@@ -322,7 +322,7 @@ void test_apache_rejects_bad_realm(void) {
     TEST_ASSERT(res.status == 401);
     
     /* check resps */
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     assert(!header_val(&res, "Authentication-Info:"));
 }
 
@@ -338,7 +338,7 @@ void test_www_authenticate_hdr(void) {
     struct tcpcrypt_http_header hdr;
     
     /* parse test */
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"", HTTP_WWW_AUTHENTICATE));
     TEST_ASSERT(hdr.type == HTTP_WWW_AUTHENTICATE);
     TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
@@ -350,7 +350,7 @@ void test_www_authenticate_hdr(void) {
     TEST_ASSERT(strlen(hdr.resps) == 0);
 
     /* stringify test */
-    CLEAR_HEADER(hdr);
+    CLEAR_HEADER(&hdr);
     hdr.type = HTTP_WWW_AUTHENTICATE;
     hdr.realm = "protected area";
     strcpy(hdr.Y, "0123456789abcdef");

@@ -52,18 +52,16 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
         return !OK;
     }
 
-    tcpcrypt_http_header_parse(&resp->hdr, auth_line, HTTP_AUTHORIZATION);
+    int parsed = tcpcrypt_http_header_parse(&resp->hdr, auth_line, HTTP_AUTHORIZATION);
     
     if (!resp->hdr.auth_name || strcasecmp(resp->hdr.auth_name, "Tcpcrypt")) {
         resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
         return !OK;
     }
 
-    if (!resp->hdr.username || !resp->hdr.realm || !resp->hdr.X || !resp->hdr.respc) {
+    if (!parsed) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "Missing field in Authorization header: '%s'", auth_line);
-        
-
         resp->auth_hdr_sts = INVALID;
         return !OK;
     }
@@ -71,10 +69,6 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
     resp->auth_hdr_sts = VALID;
     return OK;
 }
-
-
-
-
 
 /*
  * Authorization header verification code
@@ -94,7 +88,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
     ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- get_user_pake_info");
 
     /* TODO: obviously un-hardcode */
-    if (username && username[0] != '\0' && strcmp(username, "jsmith") == 0) {
+    if (username && strncmp(username, "jsmith", strlen("jsmith")) == 0) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- username");
 
         BIGNUM *pi_0;
@@ -182,6 +176,13 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     }
 
     /* check the auth attributes */
+
+    /* If the client only sent the `username` (stage=who), send back the full
+       auth challenge. */
+    if (resp->hdr.type == HTTP_AUTHORIZATION_USER) {
+        make_auth_challenge(r, conf, resp, 0);
+        return HTTP_UNAUTHORIZED;
+    }
 
     if (strcmp(resp->hdr.realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -305,6 +306,7 @@ void make_auth_challenge(request_rec *r,
     
     header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_LENGTH(&resp->hdr));
     tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1);
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "sending header WWW-Authenticate: %s", header_line);
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);
 }
 
