@@ -179,8 +179,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
                                                    conf->bn_ctx),
                                 BN_bn2hex(pi_0));
 
-    /* TODO: in pake.c, this is currently also hardcoded -- change it there, too */
-    if (!pake_server_set_credentials(&conf->pake, "jsmith", "protected area",
+    if (!pake_server_set_credentials(&conf->pake, username, conf->realm,
                                      pi_0, L, conf->bn_ctx)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_tcpcrypt: couldn't set server credentials: %s", r->uri);
