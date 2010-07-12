@@ -43,7 +43,21 @@ L &= g^{\pi_1}
 %%%%%%%%%%%%%%%%
 \begin{verbatim}
 GET /protected
-Authorization: Tcpcrypt username=<username>
+\end{verbatim} \\
+
+%%%%%%%%%%%%%%%%
+& 
+\begin{verbatim}
+401 Unauthorized
+WWW-Authenticate: Tcpcrypt realm=<realm>
+\end{verbatim} \\
+
+%%%%%%%%%%%%%%%%
+
+\begin{verbatim}
+GET /protected
+Authorization: Tcpcrypt 
+               username=<username> realm=<realm>
 \end{verbatim} \\
 
 %%%%%%%%%%%%%%%%
@@ -52,6 +66,7 @@ Authorization: Tcpcrypt username=<username>
 Compute $Y=g^\beta V^{\pi_0}.$
 
 \begin{verbatim}
+401 Unauthorized
 WWW-Authenticate: Tcpcrypt 
                   realm=<realm>, Y=<Y>,
                   username=<username>
@@ -87,6 +102,7 @@ Compute {\tt respc}. Continue only if equal to client {\tt respc}.
 
 Compute ${\tt resps} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
 \begin{verbatim}
+200 OK
 Authentication-Info: Tcpcrypt 
                      resps=<resps>
 

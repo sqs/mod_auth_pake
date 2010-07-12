@@ -3,10 +3,20 @@
 #include "crypto.h"
 #include "tcpcrypt_session.h"
 #include <assert.h>
+
+#define APLOG(s) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, s)
+
+
+int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
+int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
+
 int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp);
-void make_auth_challenge(request_rec *r,
-                         const auth_tcpcrypt_config_rec *conf,
-                         auth_tcpcrypt_header_rec *resp, int stale);
+void make_stage1_auth_challenge(request_rec *r,
+                                const auth_tcpcrypt_config_rec *conf,
+                                auth_tcpcrypt_header_rec *resp);
+void make_stage2_auth_challenge(request_rec *r,
+                                const auth_tcpcrypt_config_rec *conf,
+                                auth_tcpcrypt_header_rec *resp);
 
 /* Get the request-uri (before any subrequests etc are initiated) and
  * initialize the request_config.
@@ -32,8 +42,6 @@ static int make_header_rec(request_rec *r)
     return DECLINED;
 }
 
-
-
 /*
  * Authorization header parser code
  */
@@ -52,21 +60,23 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
         return !OK;
     }
 
-    int parsed = tcpcrypt_http_header_parse(&resp->hdr, auth_line, HTTP_AUTHORIZATION);
-    
+    int header_parse_ok = tcpcrypt_http_header_parse(&resp->hdr, 
+                                                     auth_line, HTTP_AUTHORIZATION);
+
     if (!resp->hdr.auth_name || strcasecmp(resp->hdr.auth_name, "Tcpcrypt")) {
         resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
         return !OK;
     }
 
-    if (!parsed) {
+    if (!header_parse_ok) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "Missing field in Authorization header: '%s'", auth_line);
         resp->auth_hdr_sts = INVALID;
         return !OK;
     }
 
-    resp->auth_hdr_sts = VALID;
+    resp->auth_hdr_sts = resp->hdr.type == HTTP_AUTHORIZATION_USER ? VALID_STAGE1 : VALID_STAGE2;
+
     return OK;
 }
 
@@ -89,9 +99,9 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 
     /* TODO: obviously un-hardcode */
     if (username && strncmp(username, "jsmith", strlen("jsmith")) == 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- username");
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- username = '%s'", username);
 
-        BIGNUM *pi_0;
+        BIGNUM *pi_0 = BN_new();
         assert(BN_hex2bn(&pi_0, "CBCE5FA4832FFFDF6D5A2F249BD0B89DBB1CD98908564BC2908B5109BA546FBC"));
         assert(conf->pake.public.G);
         EC_POINT *L = EC_POINT_new(conf->pake.public.G);
@@ -110,6 +120,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 }
 
 
+
 /* Determine user ID, and check if the attributes are correct. */
 
 static int authenticate_tcpcrypt_user(request_rec *r)
@@ -119,7 +130,6 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     request_rec       *mainreq;
     const char        *t;
     int                res;
-    authn_status       return_code;
 
     /* do we require Tcpcrypt auth for this URI? */
 
@@ -154,70 +164,87 @@ static int authenticate_tcpcrypt_user(request_rec *r)
 
     r->user         = (char *) resp->hdr.username;
     r->ap_auth_type = (char *) "Tcpcrypt";
-    return_code = get_user_pake_info(r, r->user, conf);
+
 
     /* check for existence and syntax of Authorization header */
-
-    if (resp->auth_hdr_sts != VALID) {
-        if (resp->auth_hdr_sts == NOT_TCPCRYPT_AUTH) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: client used wrong authentication scheme "
-                          "`%s': %s", resp->hdr.auth_name, r->uri);
-        }
-        else if (resp->auth_hdr_sts == INVALID) {
-            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                          "auth_tcpcrypt: missing user, realm, nonce, uri, or digest"
-                          " in authorization header: %s",
-                          r->uri);
-        }
-        /* else (resp->auth_hdr_sts == NO_HEADER) */
-        make_auth_challenge(r, conf, resp, 0);
+    if (resp->auth_hdr_sts == NOT_TCPCRYPT_AUTH) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: client used wrong authentication scheme "
+                      "`%s': %s", resp->hdr.auth_name, r->uri);
+        make_stage1_auth_challenge(r, conf, resp);
+        return HTTP_UNAUTHORIZED;
+    } else if (resp->auth_hdr_sts == INVALID) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: missing user, realm, nonce, uri, or digest"
+                      " in authorization header: %s",
+                      r->uri);
+        make_stage1_auth_challenge(r, conf, resp);
+        return HTTP_UNAUTHORIZED;
+    } else if (resp->auth_hdr_sts == VALID_STAGE1) {
+        APLOG("VALID_STAGE1");
+        return authorize_stage1(r, conf, resp);
+    } else if (resp->auth_hdr_sts == VALID_STAGE2) {
+        APLOG("VALID_STAGE2");
+        return authorize_stage2(r, conf, resp);
+    } else { /* NO_HEADER */
+        make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
     }
+}
 
-    /* check the auth attributes */
+int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp) {
+    authn_status       return_code;
 
-    /* If the client only sent the `username` (stage=who), send back the full
-       auth challenge. */
-    if (resp->hdr.type == HTTP_AUTHORIZATION_USER) {
-        make_auth_challenge(r, conf, resp, 0);
-        return HTTP_UNAUTHORIZED;
-    }
-
+    /* check realm */
     if (strcmp(resp->hdr.realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
                       resp->hdr.realm, conf->realm);
-        make_auth_challenge(r, conf, resp, 0);
+        make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
-    }
+    } 
+
+    return_code = get_user_pake_info(r, r->user, conf);
 
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user `%s' in realm `%s' not found: %s",
                       r->user, conf->realm, r->uri);
-        make_auth_challenge(r, conf, resp, 0);
+        make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
-    }
-    else if (return_code == AUTH_USER_FOUND) {
-        /* we have a password, so continue */
-    }
-    else if (return_code == AUTH_DENIED) {
+    } else if (return_code == AUTH_DENIED) {
         /* authentication denied in the provider before attempting a match */
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user `%s' in realm `%s' denied by provider: %s",
+                      "auth_tcpcrypt: user `%s' in realm `%s' denied: %s",
                       r->user, conf->realm, r->uri);
-        make_auth_challenge(r, conf, resp, 0);
+        make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
-    }
-    else {
+    } else if (return_code == AUTH_USER_FOUND) {
+        make_stage2_auth_challenge(r, conf, resp);
+        return HTTP_UNAUTHORIZED;
+    } else {
         /* AUTH_GENERAL_ERROR (or worse)
          * We'll assume that the module has already said what its error
          * was in the logs.
          */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
+}
 
+
+int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp) {
+    authn_status       return_code;
+
+    return_code = get_user_pake_info(r, r->user, conf);
+
+    if (return_code != AUTH_USER_FOUND) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: user `%s' in realm `%s' denied in stage 2: %s",
+                      r->user, conf->realm, r->uri);
+        make_stage1_auth_challenge(r, conf, resp);
+        return HTTP_UNAUTHORIZED;
+    }
+     
     /* recv client X */
     EC_POINT *X = EC_POINT_new(conf->pake.public.G);
     assert(EC_POINT_hex2point(conf->pake.public.G, resp->hdr.X, X, conf->bn_ctx));
@@ -229,14 +256,14 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         assert(0);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "-------");    
+
     char *exp_respc = conf->pake.shared.respc;
     char *client_respc = resp->hdr.respc;
     if (strcmp(exp_respc, client_respc)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user %s: respc mismatch: expected '%s', got '%s'",
                       r->user, exp_respc, client_respc);
-        make_auth_challenge(r, conf, resp, 0);
+        make_stage2_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
     }
 
@@ -273,6 +300,7 @@ static int add_auth_info(request_rec *r)
 
     /* assemble Authentication-Info header
      */
+    tcpcrypt_http_header_clear(&hdr);
     hdr.type = HTTP_AUTHENTICATION_INFO;
     strcpy(hdr.resps, conf->pake.shared.resps);
     ai = apr_palloc(r->pool, TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH);
@@ -288,25 +316,43 @@ static int add_auth_info(request_rec *r)
  * Authorization challenge generation code (for WWW-Authenticate)
  */
 
-void make_auth_challenge(request_rec *r,
+void make_stage1_auth_challenge(request_rec *r,
                          const auth_tcpcrypt_config_rec *conf,
-                         auth_tcpcrypt_header_rec *resp, int stale)
+                         auth_tcpcrypt_header_rec *resp)
+{
+    char *header_line = NULL;
+
+    tcpcrypt_http_header_clear(&resp->hdr);
+    resp->hdr.type = HTTP_WWW_AUTHENTICATE_STAGE1;
+    resp->hdr.realm = conf->realm;
+    resp->hdr.username = NULL;
+
+    header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
+    assert(tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1));
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "sending stage1 header WWW-Authenticate: %s", header_line);
+    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);    
+}
+
+void make_stage2_auth_challenge(request_rec *r,
+                         const auth_tcpcrypt_config_rec *conf,
+                         auth_tcpcrypt_header_rec *resp)
 {
     char *Yhex = NULL, *header_line = NULL;
     BN_CTX *ctx = NULL;
   
-    resp->hdr.type = HTTP_WWW_AUTHENTICATE;
+    resp->hdr.type = HTTP_WWW_AUTHENTICATE_STAGE2;
     resp->hdr.realm = conf->realm;
-    
+    assert(resp->hdr.username);
+
     assert(conf->pake.server_state.Y);
     Yhex = EC_POINT_point2hex(conf->pake.public.G, conf->pake.server_state.Y,
                               POINT_CONVERSION_UNCOMPRESSED, ctx);
     strcpy(resp->hdr.Y, Yhex);
     OPENSSL_free(Yhex);
     
-    header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_LENGTH(&resp->hdr));
+    header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(&resp->hdr));
     tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1);
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "sending header WWW-Authenticate: %s", header_line);
+    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "sending stage2 header WWW-Authenticate: %s", header_line);
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);
 }
 

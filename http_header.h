@@ -8,11 +8,13 @@
 #define MAX_BN_STRING_LENGTH RESP_LENGTH
 #define MAX_EC_POINT_STRING_LENGTH (MAX_BN_STRING_LENGTH*2 + 3)
 
-#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\" Y=\"\" username=\"\"") + strlen((hdr)->realm) + MAX_EC_POINT_STRING_LENGTH + strlen((hdr)->username))
+#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\"") + strlen((hdr)->realm))
+#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\" Y=\"\" username=\"\"") + strlen((hdr)->realm) + MAX_EC_POINT_STRING_LENGTH + strlen((hdr)->username))
 #define TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH (strlen("Tcpcrypt resps=\"\"") + RESP_LENGTH)
 
 enum tcpcrypt_http_auth_header_type {
-    HTTP_WWW_AUTHENTICATE, 
+    HTTP_WWW_AUTHENTICATE_STAGE1,
+    HTTP_WWW_AUTHENTICATE_STAGE2,
     HTTP_AUTHORIZATION,
     HTTP_AUTHORIZATION_USER,
     HTTP_AUTHENTICATION_INFO
@@ -35,6 +37,8 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
 
 /* Write header to string. */
 int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *hdr, int value_only);
+
+void tcpcrypt_http_header_clear(struct tcpcrypt_http_header *hdr);
 
 /* Print debugging info about header. */
 void tcpcrypt_http_header_inspect(struct tcpcrypt_http_header *hdr);

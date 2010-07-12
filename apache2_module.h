@@ -71,7 +71,7 @@ typedef struct hash_entry {
 
 /* struct to hold a parsed Authorization header */
 
-enum hdr_sts { NO_HEADER, NOT_TCPCRYPT_AUTH, INVALID, VALID };
+enum hdr_sts { NO_HEADER, NOT_TCPCRYPT_AUTH, INVALID, VALID_STAGE1, VALID_STAGE2 };
 
 typedef struct auth_tcpcrypt_header_struct {
     struct tcpcrypt_http_header hdr;
