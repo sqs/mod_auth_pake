@@ -100,8 +100,6 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
         return AUTH_USER_NOT_FOUND;
     }
 
-    APLOG("pakefile = %s", conf->pakefile);
-
     ap_configfile_t *f;
     char l[MAX_STRING_LEN];
     apr_status_t status;
