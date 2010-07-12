@@ -155,7 +155,7 @@ void do_http_request(struct http_request *req, struct http_response *res) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, NULL);
 }
 
-void get_hdr(char *k, enum tcpcrypt_http_auth_header_type type, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
+void get_hdr(char *k, enum tcpcrypt_http_auth_header_type_http type, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
     char *header_line = header_val(res, k);
 
     if (!header_line) {
@@ -181,7 +181,7 @@ char *make_stage1_hdr(char *username, char *realm) {
     static char hdr[1000];
 
     CLEAR_HEADER(&stage1_hdr);
-    stage1_hdr.type = HTTP_AUTHORIZATION_USER;
+    stage1_hdr.type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE1;
     stage1_hdr.username = username;
     stage1_hdr.realm = realm;
     assert(tcpcrypt_http_header_stringify(hdr, &stage1_hdr, 0));
@@ -193,7 +193,7 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char
     struct tcpcrypt_http_header req_hdr;
     CLEAR_HEADER(&req_hdr);
 
-    req_hdr.type = HTTP_AUTHORIZATION;
+    req_hdr.type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE2;
     req_hdr.username = username;
     req_hdr.realm = realm;
 
@@ -234,12 +234,12 @@ void test_apache_www_authenticate_hdr(void) {
 
     req.url = TEST_PROTECTED_URL;
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE_STAGE1, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     assert(res.status == 401);
 
     set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE_STAGE2, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     assert(res.status == 401);
 
     char *www_auth = header_val(&res, "WWW-Authenticate:");
@@ -247,7 +247,7 @@ void test_apache_www_authenticate_hdr(void) {
     assert(www_auth != NULL);
 
     if (detailed) tcpcrypt_http_header_inspect(&hdr);
-    TEST_ASSERT(hdr.type == HTTP_WWW_AUTHENTICATE_STAGE2);
+    TEST_ASSERT(hdr.type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2);
     TEST_ASSERT_STREQ("Tcpcrypt", hdr.auth_name);
     TEST_ASSERT_STREQ("protected area", hdr.realm);
     assert(strlen(hdr.Y));
@@ -265,7 +265,7 @@ void test_apache_authorizes(void) {
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE_STAGE2, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
     if (res.status != 401) return;
     
@@ -293,7 +293,7 @@ void test_apache_rejects_bad_username(void) {
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_stage1_hdr("baduser", TEST_REALM1));
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE_STAGE1, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
@@ -318,7 +318,7 @@ void test_apache_rejects_bad_realm(void) {
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, "badrealm"));
     do_http_request(&req, &res);
-    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE_STAGE1, &req, &res, &hdr);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
 
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
@@ -346,8 +346,8 @@ void test_www_authenticate_hdr(void) {
     
     /* parse test */
     CLEAR_HEADER(&hdr);
-    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\" username=\"jsmith\"", HTTP_WWW_AUTHENTICATE_STAGE2));
-    TEST_ASSERT(hdr.type == HTTP_WWW_AUTHENTICATE_STAGE2);
+    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\" username=\"jsmith\"", HTTP_WWW_AUTHENTICATE));
+    TEST_ASSERT(hdr.type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2);
     TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
     TEST_ASSERT_STREQ("jsmith", hdr.username);
     TEST_ASSERT_STREQ(hdr.realm, "protected area");
@@ -358,7 +358,7 @@ void test_www_authenticate_hdr(void) {
 
     /* stringify test */
     CLEAR_HEADER(&hdr);
-    hdr.type = HTTP_WWW_AUTHENTICATE_STAGE2;
+    hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
     hdr.realm = "protected area";
     hdr.username = "jsmith";
     strcpy(hdr.Y, "0123456789abcdef");

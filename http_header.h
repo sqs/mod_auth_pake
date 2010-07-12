@@ -12,12 +12,18 @@
 #define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\" Y=\"\" username=\"\"") + strlen((hdr)->realm) + MAX_EC_POINT_STRING_LENGTH + strlen((hdr)->username))
 #define TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH (strlen("Tcpcrypt resps=\"\"") + RESP_LENGTH)
 
-enum tcpcrypt_http_auth_header_type {
-    HTTP_WWW_AUTHENTICATE_STAGE1,
-    HTTP_WWW_AUTHENTICATE_STAGE2,
+enum tcpcrypt_http_auth_header_type_http {
+    HTTP_WWW_AUTHENTICATE,
     HTTP_AUTHORIZATION,
-    HTTP_AUTHORIZATION_USER,
-    HTTP_AUTHENTICATION_INFO
+    HTTP_AUTHENTICATION_INFO,
+};
+
+enum tcpcrypt_http_auth_header_type {
+    TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1,
+    TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2,
+    TCPCRYPT_HTTP_AUTHORIZATION_STAGE2,
+    TCPCRYPT_HTTP_AUTHORIZATION_STAGE1,
+    TCPCRYPT_HTTP_AUTHENTICATION_INFO
 };
 
 struct tcpcrypt_http_header {
@@ -33,7 +39,7 @@ struct tcpcrypt_http_header {
 
 /* Parses header value (only the part after the ":", not the whole line) into
    `header`. */
-int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type type);
+int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type_http type);
 
 /* Write header to string. */
 int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *hdr, int value_only);

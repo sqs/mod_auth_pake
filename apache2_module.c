@@ -5,7 +5,7 @@
 #include <assert.h>
 
 #define APLOG(s) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, s)
-
+#define LOG_PAKE 1
 
 int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
 int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
@@ -69,13 +69,13 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
     }
 
     if (!header_parse_ok) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "Missing field in Authorization header: '%s'", auth_line);
         resp->auth_hdr_sts = INVALID;
         return !OK;
     }
 
-    resp->auth_hdr_sts = resp->hdr.type == HTTP_AUTHORIZATION_USER ? VALID_STAGE1 : VALID_STAGE2;
+    /* set which stage we're on */
+    resp->auth_hdr_sts = 
+        resp->hdr.type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE1 ? VALID_STAGE1 : VALID_STAGE2;
 
     return OK;
 }
@@ -87,36 +87,55 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
 /* Gets pake auth info for `user` (pi_0, pi_1, username) and stores it in `conf`. */
 static authn_status get_user_pake_info(request_rec *r, const char *username,
                                        auth_tcpcrypt_config_rec *conf)
-{
-    authn_status authn_result;
-    
+{    
     struct pake_info *pake = &conf->pake;
     memset(pake, 0, sizeof(*pake));
+
     conf->bn_ctx = BN_CTX_new();
     BN_CTX_start(conf->bn_ctx);
-    assert(pake_server_init(pake, conf->bn_ctx));  
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- get_user_pake_info");
+
+    if (!pake_server_init(pake, conf->bn_ctx)) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                      "auth_tcpcrypt: couldn't init pake: %s", r->uri);
+        return AUTH_USER_NOT_FOUND;
+    }
 
     /* TODO: obviously un-hardcode */
     if (username && strncmp(username, "jsmith", strlen("jsmith")) == 0) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "--------------- username = '%s'", username);
+        if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                                    "--------------- username = '%s'", username);
 
         BIGNUM *pi_0 = BN_new();
-        assert(BN_hex2bn(&pi_0, "CBCE5FA4832FFFDF6D5A2F249BD0B89DBB1CD98908564BC2908B5109BA546FBC"));
+        assert(BN_hex2bn(&pi_0, "CBCE5FA4832FFFDF6D5A2F249BD0B89D" \
+                                "BB1CD98908564BC2908B5109BA546FBC"));
         assert(conf->pake.public.G);
+
         EC_POINT *L = EC_POINT_new(conf->pake.public.G);
-        EC_POINT_hex2point(conf->pake.public.G, "04888D011AFDEFD6B336A96D4CC3052A842527B0134A6F7AAB11CF62A3276C526CCBF8F8EEF55C61CCD22F8578693D1CC9811DE95C04D9A0D73EC9B00F99E939DF", L, conf->bn_ctx);
+        EC_POINT_hex2point(conf->pake.public.G, "04888D011AFDEFD6B336A96D4CC3052A" \
+                           "842527B0134A6F7AAB11CF62A3276C526CCBF8F8EEF55C61CCD22" \
+                           "F8578693D1CC9811DE95C04D9A0D73EC9B00F99E939DF",
+                           L, conf->bn_ctx);
         assert(L);
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "L = %s, pi_0 = %s", EC_POINT_point2hex(conf->pake.public.G, L, POINT_CONVERSION_UNCOMPRESSED, conf->bn_ctx), BN_bn2hex(pi_0));
+        
+        if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                                    "L = %s, pi_0 = %s", 
+                                    EC_POINT_point2hex(conf->pake.public.G, L,
+                                                       POINT_CONVERSION_UNCOMPRESSED,
+                                                       conf->bn_ctx),
+                                    BN_bn2hex(pi_0));
 
-        assert(pake_server_set_credentials(&conf->pake, "jsmith", "protected area", pi_0, L, conf->bn_ctx));
         /* TODO: in pake.c, this is currently also hardcoded -- change it there, too */
-        authn_result = AUTH_USER_FOUND;
-    } else {
-        authn_result = AUTH_USER_NOT_FOUND;
-    }
+        if (!pake_server_set_credentials(&conf->pake, "jsmith", "protected area",
+                                         pi_0, L, conf->bn_ctx)) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                          "auth_tcpcrypt: couldn't set server credentials: %s", r->uri);
+            return AUTH_USER_NOT_FOUND;
+        }
 
-    return authn_result;
+        return AUTH_USER_FOUND;
+    } 
+
+    return AUTH_USER_NOT_FOUND;
 }
 
 
@@ -175,16 +194,13 @@ static int authenticate_tcpcrypt_user(request_rec *r)
         return HTTP_UNAUTHORIZED;
     } else if (resp->auth_hdr_sts == INVALID) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: missing user, realm, nonce, uri, or digest"
-                      " in authorization header: %s",
+                      "auth_tcpcrypt: malformed header: %s",
                       r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
     } else if (resp->auth_hdr_sts == VALID_STAGE1) {
-        APLOG("VALID_STAGE1");
         return authorize_stage1(r, conf, resp);
     } else if (resp->auth_hdr_sts == VALID_STAGE2) {
-        APLOG("VALID_STAGE2");
         return authorize_stage2(r, conf, resp);
     } else { /* NO_HEADER */
         make_stage1_auth_challenge(r, conf, resp);
@@ -215,7 +231,7 @@ int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
     } else if (return_code == AUTH_DENIED) {
         /* authentication denied in the provider before attempting a match */
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user `%s' in realm `%s' denied: %s",
+                      "auth_tcpcrypt: user `%s' in realm `%s' denied before stage2: %s",
                       r->user, conf->realm, r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -247,13 +263,19 @@ int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
      
     /* recv client X */
     EC_POINT *X = EC_POINT_new(conf->pake.public.G);
-    assert(EC_POINT_hex2point(conf->pake.public.G, resp->hdr.X, X, conf->bn_ctx));
+    if (!EC_POINT_hex2point(conf->pake.public.G, resp->hdr.X, X, conf->bn_ctx)) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: couldn't convert hex X to EC_POINT: X=%s, uri=%s",
+                      resp->hdr.X, r->uri);
+        return HTTP_INTERNAL_SERVER_ERROR;
+    }
     pake_server_recv_X(&conf->pake, X);
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "------- X = %s", resp->hdr.X);
 
+    /* compute expected respc */
     if (!tcpcrypt_pake_compute_respc(&conf->pake, tcpcrypt_get_sid(), conf->bn_ctx)) {
-        /* failed to compute respc */
-        assert(0);
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_tcpcrypt: couldn't compute expected respc: uri=%s",
+                      r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -301,7 +323,7 @@ static int add_auth_info(request_rec *r)
     /* assemble Authentication-Info header
      */
     tcpcrypt_http_header_clear(&hdr);
-    hdr.type = HTTP_AUTHENTICATION_INFO;
+    hdr.type = TCPCRYPT_HTTP_AUTHENTICATION_INFO;
     strcpy(hdr.resps, conf->pake.shared.resps);
     ai = apr_palloc(r->pool, TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH);
     tcpcrypt_http_header_stringify(ai, &hdr, 1);
@@ -323,13 +345,12 @@ void make_stage1_auth_challenge(request_rec *r,
     char *header_line = NULL;
 
     tcpcrypt_http_header_clear(&resp->hdr);
-    resp->hdr.type = HTTP_WWW_AUTHENTICATE_STAGE1;
+    resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1;
     resp->hdr.realm = conf->realm;
     resp->hdr.username = NULL;
 
     header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
     assert(tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1));
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "sending stage1 header WWW-Authenticate: %s", header_line);
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);    
 }
 
@@ -337,12 +358,14 @@ void make_stage2_auth_challenge(request_rec *r,
                          const auth_tcpcrypt_config_rec *conf,
                          auth_tcpcrypt_header_rec *resp)
 {
-    char *Yhex = NULL, *header_line = NULL;
+    char *Yhex = NULL, *header_line = NULL, *username = NULL;
     BN_CTX *ctx = NULL;
-  
-    resp->hdr.type = HTTP_WWW_AUTHENTICATE_STAGE2;
+
+    username = resp->hdr.username;
+    tcpcrypt_http_header_clear(&resp->hdr);
+    resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
     resp->hdr.realm = conf->realm;
-    assert(resp->hdr.username);
+    resp->hdr.username = username;
 
     assert(conf->pake.server_state.Y);
     Yhex = EC_POINT_point2hex(conf->pake.public.G, conf->pake.server_state.Y,
@@ -351,8 +374,7 @@ void make_stage2_auth_challenge(request_rec *r,
     OPENSSL_free(Yhex);
     
     header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(&resp->hdr));
-    tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1);
-    ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "sending stage2 header WWW-Authenticate: %s", header_line);
+    assert(tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1));
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);
 }
 

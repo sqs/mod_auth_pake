@@ -30,23 +30,28 @@ char *strdup(const char *str)
 }
 
 static int check_header(struct tcpcrypt_http_header *hdr) {
-    if (hdr->type == HTTP_AUTHORIZATION) {
+    if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE2) {
         return hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) &&
             strlen(hdr->X) && strlen(hdr->Y) == 0 && strlen(hdr->respc) &&
             strlen(hdr->resps) == 0;
-    } else if (hdr->type == HTTP_AUTHORIZATION_USER) {
+    } else if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE1) {
         return hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) && 
             strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && 
             strlen(hdr->respc) == 0 && strlen(hdr->resps) == 0;
-    } else if (hdr->type == HTTP_WWW_AUTHENTICATE_STAGE1) {
+    } else if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1) {
         return !hdr->username && hdr->realm && strlen(hdr->realm) &&
             strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && strlen(hdr->respc) == 0 &&
             strlen(hdr->resps) == 0;
-    } else if (hdr->type == HTTP_WWW_AUTHENTICATE_STAGE2) {
+    } else if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2) {
+        assert(hdr->username); assert(strlen(hdr->username));
+        assert(hdr->realm); assert(strlen(hdr->realm));
+        assert(strlen(hdr->X) == 0); assert(strlen(hdr->Y));
+        assert(strlen(hdr->respc) == 0); assert(strlen(hdr->resps) == 0);
+
         return hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) &&
             strlen(hdr->X) == 0 && strlen(hdr->Y) && strlen(hdr->respc) == 0 &&
             strlen(hdr->resps) == 0;
-    } else if (hdr->type == HTTP_AUTHENTICATION_INFO) {
+    } else if (hdr->type == TCPCRYPT_HTTP_AUTHENTICATION_INFO) {
         return !hdr->username && !hdr->realm && 
             strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && 
             strlen(hdr->respc) == 0 && strlen(hdr->resps);
@@ -55,9 +60,8 @@ static int check_header(struct tcpcrypt_http_header *hdr) {
     }
 }
 
-int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type type) {
+int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type_http type) {
     tcpcrypt_http_header_clear(hdr);
-    hdr->type = type;
     
     /* skip whitespaces */
     while(*header_line && isspace(*header_line))
@@ -116,10 +120,24 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
     }
 
     /* See what kind of Authorization: header this is. */
-    if (hdr->type == HTTP_AUTHORIZATION && hdr->username &&
-        hdr->realm && hdr->X[0] == '\0' && hdr->Y[0] == '\0' &&
-        hdr->respc[0] == '\0' && hdr->resps[0] == '\0') {
-        hdr->type = HTTP_AUTHORIZATION_USER;
+    if (type == HTTP_WWW_AUTHENTICATE) {
+        if (!hdr->username && hdr->realm && hdr->X[0] == '\0' &&
+            hdr->Y[0] == '\0' && hdr->respc[0] == '\0' && 
+            hdr->resps[0] == '\0') {
+            hdr->type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1;
+        } else {
+            hdr->type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
+        }
+    } else if (type == HTTP_AUTHORIZATION) {
+        if (hdr->username && hdr->realm && hdr->X[0] == '\0' &&
+            hdr->Y[0] == '\0' && hdr->respc[0] == '\0' && 
+            hdr->resps[0] == '\0') {
+            hdr->type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE1;
+        } else {
+            hdr->type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE2;
+        }
+    } else if (type == HTTP_AUTHENTICATION_INFO) {
+        hdr->type = TCPCRYPT_HTTP_AUTHENTICATION_INFO;
     }
 
     if (!check_header(hdr)) goto err;
@@ -136,22 +154,22 @@ int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_heade
 
     if (!check_header(hdr)) goto err;
 
-    if (hdr->type == HTTP_WWW_AUTHENTICATE_STAGE1) {
+    if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1) {
         sprintf(header_line, "%sTcpcrypt realm=\"%s\"", 
                 value_only ? "" : "WWW-Authenticate: ", hdr->realm);
-    } else if (hdr->type == HTTP_WWW_AUTHENTICATE_STAGE2) {
+    } else if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2) {
         sprintf(header_line, "%sTcpcrypt realm=\"%s\" Y=\"%s\" username=\"%s\"", 
                 value_only ? "" : "WWW-Authenticate: ", hdr->realm, hdr->Y,
                 hdr->username);
-    } else if (hdr->type == HTTP_AUTHORIZATION) {
+    } else if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE2) {
         sprintf(header_line, "%sTcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"",
                 value_only ? "" : "Authorization: ",
                 hdr->X, hdr->username, hdr->respc, hdr->realm);
-    } else if (hdr->type == HTTP_AUTHORIZATION_USER) {
+    } else if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE1) {
         sprintf(header_line, "%sTcpcrypt username=\"%s\" realm=\"%s\"", 
                 value_only ? "" : "Authorization: ",
                 hdr->username, hdr->realm);
-    } else if (hdr->type == HTTP_AUTHENTICATION_INFO) {
+    } else if (hdr->type == TCPCRYPT_HTTP_AUTHENTICATION_INFO) {
         sprintf(header_line, "%sTcpcrypt resps=\"%s\"", 
                 value_only ? "" : "Authentication-Info: ", hdr->resps);
     } else {
