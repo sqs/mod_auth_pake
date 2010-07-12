@@ -23,10 +23,6 @@ static struct hash_table {
     unsigned long   num_renewed;
 } *client_list;
 
-
-static unsigned char secret[SECRET_LEN];
-
-
 /*
  * initialization code
  */
@@ -58,7 +54,7 @@ static apr_status_t initialize_secret(server_rec *s)
                  "auth_tcpcrypt: generating secret for tcpcrypt authentication ...");
 
 #if APR_HAS_RANDOM
-    status = apr_generate_random_bytes(secret, sizeof(secret));
+    status = apr_generate_random_bytes(auth_tcpcrypt_secret, sizeof(auth_tcpcrypt_secret));
 #else
 #error APR random number support is missing; you probably need to install the truerand library.
 #endif

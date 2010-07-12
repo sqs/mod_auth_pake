@@ -13,7 +13,7 @@ void test_pake() {
     assert(ctx = BN_CTX_new());
     BN_CTX_start(ctx);
 
-    assert(pake_server_init(&ps, ctx));
+    assert(pake_server_init(&ps, ctx, NULL));
     assert(pake_client_init(&pc, ctx));
 
     /* set credentials */

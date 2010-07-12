@@ -26,6 +26,7 @@ static apr_rmm_t      *client_rmm = NULL;
 apr_time_t     *otn_counter;     /* one-time-nonce counter */
 static apr_global_mutex_t *client_lock = NULL;
 char            client_lock_name[L_tmpnam];
+static unsigned char auth_tcpcrypt_secret[SECRET_LEN];
 
 module AP_MODULE_DECLARE_DATA auth_tcpcrypt_module;
 

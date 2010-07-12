@@ -84,17 +84,42 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
  * Authorization header verification code
  */
 
+static BIGNUM *make_beta(unsigned char *secret) {
+    BIGNUM *beta;
+    SHA512_CTX sha;
+    long tcpcrypt_sid;
+    unsigned char md[SHA512_DIGEST_LENGTH];
+
+    beta = BN_new();
+    assert(beta);
+
+    tcpcrypt_sid = tcpcrypt_get_sid();
+
+    assert(SHA512_Init(&sha));
+    assert(SHA512_Update(&sha, &tcpcrypt_sid, sizeof(tcpcrypt_sid)));
+    assert(SHA512_Update(&sha, secret, SECRET_LEN));
+    assert(SHA512_Final(md, &sha));
+
+    assert(BN_bin2bn(md, SHA512_DIGEST_LENGTH, beta));
+    return beta;
+}
+
 /* Gets pake auth info for `user` (pi_0, pi_1, username) and stores it in `conf`. */
 static authn_status get_user_pake_info(request_rec *r, const char *username,
                                        auth_tcpcrypt_config_rec *conf)
-{    
+{   
+    BIGNUM *beta;
     struct pake_info *pake = &conf->pake;
     memset(pake, 0, sizeof(*pake));
 
     conf->bn_ctx = BN_CTX_new();
     BN_CTX_start(conf->bn_ctx);
+    
+    /* make beta = H(sid, auth_tcpcryppt_secret) */
+    beta = make_beta(auth_tcpcrypt_secret);
+    assert(beta);
 
-    if (!pake_server_init(pake, conf->bn_ctx)) {
+    if (!pake_server_init(pake, conf->bn_ctx, beta)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_tcpcrypt: couldn't init pake: %s", r->uri);
         return AUTH_USER_NOT_FOUND;

@@ -36,13 +36,13 @@ static int hash_point(SHA256_CTX *sha,
                BIGNUM *P_y,
                BN_CTX *ctx);
 
-int pake_server_init(struct pake_info *p, BN_CTX *ctx) {
+int pake_server_init(struct pake_info *p, BN_CTX *ctx, BIGNUM *beta) {
     int ret = 0;
 
     p->isserver = 1;
     
     if (!pake_init_public(p, ctx)) goto err;
-    if (!pake_server_init_state(p, ctx)) goto err;
+    if (!pake_server_init_state(p, ctx, beta)) goto err;
 
     ret = 1;
 
@@ -108,22 +108,27 @@ int pake_init_public(struct pake_info *p, BN_CTX *ctx) {
 }
 
 /* Choose $\beta \in \mathbf{Z}_q$ at random. */
-int pake_server_init_state(struct pake_info *p, BN_CTX *ctx) {
+int pake_server_init_state(struct pake_info *p, BN_CTX *ctx, BIGNUM *beta) {
     int ret = 0;
     BIGNUM *order = NULL;
 
     order = BN_new();
-    p->server_state.beta = BN_new();
-    if (!order || !p->server_state.beta) goto err;
-    if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
+
+    if (beta) {
+        p->server_state.beta = BN_dup(beta);
+    } else {
+        p->server_state.beta = BN_new();
+        if (!order || !p->server_state.beta) goto err;
+        if (!EC_GROUP_get_order(p->public.G, order, ctx)) goto err;
     
-    /* choose beta */
-    do {
-        if (!BN_rand_range(p->server_state.beta, order)) goto err;
-    } while (BN_is_zero(p->server_state.beta));
-    /* TODO: HACK: always use same alpha so that apache doesn't need to keep
-       per-client state -- fix this */
-    if (!BN_hex2bn(&p->server_state.beta, "7417A0A2C9824875508F1524C28FBA21F49562B89D86D15530BFF792EBBB8BDD")) goto err;
+        /* choose beta */
+        do {
+            if (!BN_rand_range(p->server_state.beta, order)) goto err;
+        } while (BN_is_zero(p->server_state.beta));
+        /* TODO: HACK: always use same alpha so that apache doesn't need to keep
+           per-client state -- fix this */
+        if (!BN_hex2bn(&p->server_state.beta, "7417A0A2C9824875508F1524C28FBA21F49562B89D86D15530BFF792EBBB8BDD")) goto err;
+    }
  
     ret = 1;
 
