@@ -172,12 +172,16 @@ void set_auth_hdr(CURL *curl_, char *auth_hdr) {
     curl_easy_setopt(curl_, CURLOPT_HTTPHEADER, headers);
 }
 
-void make_user_hdr(char *header_line, char *username) {
-    struct tcpcrypt_http_header user_hdr;
+char *make_user_hdr(char *username) {
+    static struct tcpcrypt_http_header user_hdr;
+    static char hdr[1000];
+
     CLEAR_HEADER(user_hdr);
     user_hdr.type = HTTP_AUTHORIZATION_USER;
     user_hdr.username = username;
-    assert(tcpcrypt_http_header_stringify(header_line, &user_hdr, 0));
+    assert(tcpcrypt_http_header_stringify(hdr, &user_hdr, 0));
+
+    return hdr;
 }
 
 void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char *exp_resps, char *username, char *realm, char *password) {
@@ -224,10 +228,8 @@ void test_apache_www_authenticate_hdr(void) {
     struct tcpcrypt_http_header hdr;
     CLEAR_HEADER(hdr);
 
-    char user_hdr[1000];
     req.url = TEST_PROTECTED_URL;
-    make_user_hdr(user_hdr, TEST_USER1);
-    set_auth_hdr(curl, user_hdr);
+    set_auth_hdr(curl, make_user_hdr(TEST_USER1));
     do_http_request(&req, &res);
     get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
@@ -255,10 +257,8 @@ void test_apache_authorizes(void) {
     struct tcpcrypt_http_header hdr;
     CLEAR_HEADER(hdr);
     
-    char user_hdr[1000];
     req.url = TEST_PROTECTED_URL;
-    make_user_hdr(user_hdr, TEST_USER1);
-    set_auth_hdr(curl, user_hdr);
+    set_auth_hdr(curl, make_user_hdr(TEST_USER1));
     do_http_request(&req, &res);
     get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
