@@ -394,7 +394,7 @@ static void register_hooks(apr_pool_t *p)
 module AP_MODULE_DECLARE_DATA auth_tcpcrypt_module =
 {
     STANDARD20_MODULE_STUFF,
-    create_auth_tcpcrypt_dir_config,   /* dir config creater */
+    create_auth_tcpcrypt_dir_config,   /* dir config creator */
     NULL,                       /* dir merger --- default is to override */
     NULL,                       /* server config */
     NULL,                       /* merge server config */
