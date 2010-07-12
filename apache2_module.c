@@ -104,19 +104,51 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
     if (username && strncmp(username, "jsmith", strlen("jsmith")) == 0) {
         APLOG("pakefile = %s", conf->pakefile);
 
+        ap_configfile_t *f;
+        char l[MAX_STRING_LEN];
+        apr_status_t status;
+        char *file_pi_0 = NULL, *file_L = NULL;
+
+        /* following code to read file is from mod_authn_file.c */
+        status = ap_pcfg_openfile(&f, r->pool, conf->pakefile);
+        if (status != APR_SUCCESS) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, status, r,
+                          "could not open PAKEFile: %s", conf->pakefile);
+            return AUTH_GENERAL_ERROR;
+        }
+
+        while(!(ap_cfg_getline(l, MAX_STRING_LEN, f))) {
+            const char *rpw, *w;
+            
+            /* Skip # or blank lines. */
+            if ((l[0] == '#') || (!l[0])) {
+                continue;
+            }
+
+            rpw = l;
+            w = ap_getword(r->pool, &rpw, ' ');
+            
+            if (!strcmp(username, w)) {
+                file_pi_0 = ap_getword(r->pool, &rpw, ' ');
+                file_L = ap_getword(r->pool, &rpw, ' ');
+                break;
+            }
+        }
+        ap_cfg_closefile(f);
+
+        if (!file_pi_0 || !file_L) {
+            return AUTH_USER_NOT_FOUND;
+        }
+
         if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                                     "--------------- username = '%s'", username);
 
         BIGNUM *pi_0 = BN_new();
-        assert(BN_hex2bn(&pi_0, "CBCE5FA4832FFFDF6D5A2F249BD0B89D" \
-                                "BB1CD98908564BC2908B5109BA546FBC"));
+        assert(BN_hex2bn(&pi_0, file_pi_0));
         assert(conf->pake.public.G);
 
         EC_POINT *L = EC_POINT_new(conf->pake.public.G);
-        EC_POINT_hex2point(conf->pake.public.G, "04888D011AFDEFD6B336A96D4CC3052A" \
-                           "842527B0134A6F7AAB11CF62A3276C526CCBF8F8EEF55C61CCD22" \
-                           "F8578693D1CC9811DE95C04D9A0D73EC9B00F99E939DF",
-                           L, conf->bn_ctx);
+        EC_POINT_hex2point(conf->pake.public.G, file_L, L, conf->bn_ctx);
         assert(L);
         
         if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
