@@ -14,6 +14,7 @@
 enum tcpcrypt_http_auth_header_type {
     HTTP_WWW_AUTHENTICATE, 
     HTTP_AUTHORIZATION,
+    HTTP_AUTHORIZATION_USER,
     HTTP_AUTHENTICATION_INFO
 };
 

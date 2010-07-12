@@ -107,6 +107,10 @@ int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_heade
         sprintf(header_line, "%sTcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"",
                 value_only ? "" : "Authorization: ",
                 info->X, info->username, info->respc, info->realm);
+    } else if (info->type == HTTP_AUTHORIZATION_USER) {
+        sprintf(header_line, "%sTcpcrypt username=\"%s\"", 
+                value_only ? "" : "Authorization: ",
+                info->username);
     } else if (info->type == HTTP_AUTHENTICATION_INFO) {
         sprintf(header_line, "%sTcpcrypt resps=\"%s\"", 
                 value_only ? "" : "Authentication-Info: ", info->resps);
