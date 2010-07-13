@@ -125,8 +125,6 @@ int pake_server_init_state(struct pake_info *p, BN_CTX *ctx, BIGNUM *beta) {
         do {
             if (!BN_rand_range(p->server_state.beta, order)) goto err;
         } while (BN_is_zero(p->server_state.beta));
-        /* TODO: HACK: always use same alpha so that apache doesn't need to keep
-           per-client state -- fix this */
         if (!BN_hex2bn(&p->server_state.beta, "7417A0A2C9824875508F1524C28FBA21F49562B89D86D15530BFF792EBBB8BDD")) goto err;
     }
  
