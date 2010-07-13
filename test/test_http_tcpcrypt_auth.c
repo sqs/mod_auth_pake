@@ -24,8 +24,10 @@ static int detailed = 0; // level of detail for tests
 #define TEST_HOST "localhost"
 #define TEST_PORT "8080"
 #define TEST_PROTECTED_PATH "protected/"
+#define TEST_PROTECTED_PATH2 "protected/abc.txt"
 #define TEST_ROOT_URL "http://" TEST_HOST ":" TEST_PORT "/"
 #define TEST_PROTECTED_URL TEST_ROOT_URL TEST_PROTECTED_PATH
+#define TEST_PROTECTED_URL2 TEST_ROOT_URL TEST_PROTECTED_PATH2
 #define TEST_USER1 "jsmith"
 #define TEST_REALM1 "protected area"
 #define TEST_PW1 "jsmith"
@@ -277,11 +279,20 @@ void test_apache_authorizes(void) {
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
+    TEST_ASSERT_STREQ("<h1>Protected</h1>\n", res.body.data);
     
     /* check resps */
     CLEAR_HEADER(&hdr);
     get_hdr("Authentication-Info:", HTTP_AUTHENTICATION_INFO, &req, &res, &hdr);
     TEST_ASSERT_STREQ(exp_resps, hdr.resps);
+
+    /* try getting another file with the same auth hdr */
+    req.url = TEST_PROTECTED_URL2;
+    set_auth_hdr(curl, auth_hdr);
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 200);
+    TEST_ASSERT_STREQ("This file is also protected!\n", res.body.data);
+
 }
 
 void test_apache_rejects_bad_username(void) {
