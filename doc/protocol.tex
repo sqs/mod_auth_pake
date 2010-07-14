@@ -1,8 +1,10 @@
 \documentclass[10pt]{article}
-\usepackage{savetrees}
+\usepackage[top=0.5cm, bottom=0.5cm, left=0.5cm, right=0.5cm]{geometry}
+%\usepackage{savetrees}
 %\usepackage{times}
 \usepackage{amsmath}
 \usepackage{multirow}
+\usepackage{multicol}
 \usepackage{mathtools} % shortintertext
 
 \begin{document}
@@ -16,15 +18,20 @@
 
 \section{Definitions}
 
+\begin{multicols}{2}
+
 \subsection*{Public}
 \begin{align*}
 \textrm{username, realm} &: \textit{strings}\\
 \mathbf{G} &: \textrm{group of prime order $q$ on which CDH is hard}\\
 g &: \textrm{a generator of $\mathbf{G}$} \\
 U,\, V &: \textrm{chosen at random from $\mathbf{G}$} \\
-H_0,\, H_1 &: \textrm{cryptographic hash functions mapping strings to elements of $\mathbf{Z}_q$} \\
-H &: \textrm{hash function mapping to bit strings the size of a MAC key}
-\shortintertext{\subsection*{Shared secrets (known to client and server)}}
+H_0,\, H_1 &: \textrm{crypto hash fn., strings $\to$ elems of $\mathbf{Z}_q$} \\
+H &: \textrm{hash fn. on bit strings size of MAC key} \\
+\end{align*}
+
+\subsection*{Shared secrets (known to client and server)}
+\begin{align*}
 \pi_0 &= H_0(\textrm{password}, \textrm{username}, \textrm{server name}) \\
 L &= g^{\pi_1}
 \shortintertext{\subsection*{Client-side secret}}
@@ -32,25 +39,24 @@ L &= g^{\pi_1}
 \pi_1 &= H_1(\textrm{password}, \textrm{username}, \textrm{server name})
 \end{align*}
 
+\end{multicols}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Protocol}
 
-\begin{tabular}{p{9cm} | p{9cm}}
+\begin{tabular}{p{9.82cm} | p{9.82cm}}
 \multicolumn{1}{c}{\bf Client} & \multicolumn{1}{c}{\bf Server} \\
 \hline
 %%%%%%%%%%%%%%%%
-\begin{verbatim}
-GET /protected
-\end{verbatim} \\
+\vspace{0.06cm}{\tt GET /protected} \\
 
 %%%%%%%%%%%%%%%%
 & 
-\begin{verbatim}
-401 Unauthorized
-WWW-Authenticate: Tcpcrypt realm=<realm>
-\end{verbatim} \\
+{\tt 401 Unauthorized}
+
+{\tt WWW-Authenticate: Tcpcrypt realm=<realm>}
+\\
 
 %%%%%%%%%%%%%%%%
 
@@ -97,7 +103,7 @@ Compute $g^{\pi_1 \beta} = L^\beta.$
 
 Compute $h$ (in the same way as the client).
 
-Compute {\tt respc}. Continue only if equal to client {\tt respc}.
+Compute {\tt respc}, and continue if matches client {\tt respc}.
 
 Compute ${\tt resps} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
 \begin{verbatim}
@@ -109,7 +115,7 @@ Authentication-Info: Tcpcrypt
 \end{verbatim} \\
 
 %%%%%%%%%%%%%%%%
-Compute ${\tt resps}$. Show page only if equal to server {\tt resps}.
+Compute ${\tt resps}$, and show page if matches server {\tt resps}.
 \end{tabular}
 
 \end{document}
