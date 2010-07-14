@@ -254,7 +254,7 @@ void test_apache_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ("protected area", hdr.realm);
     assert(strlen(hdr.Y));
     TEST_ASSERT_STREQ("", hdr.X);
-    TEST_ASSERT(strcmp(TEST_USER1, hdr.username) == 0);
+    TEST_ASSERT(!hdr.username);
     TEST_ASSERT(hdr.resps[0] == '\0');
     TEST_ASSERT(hdr.respc[0] == '\0');
 }
@@ -357,10 +357,10 @@ void test_www_authenticate_hdr(void) {
     
     /* parse test */
     CLEAR_HEADER(&hdr);
-    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\" username=\"jsmith\"", HTTP_WWW_AUTHENTICATE));
+    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"", HTTP_WWW_AUTHENTICATE));
     TEST_ASSERT(hdr.type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2);
     TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
-    TEST_ASSERT_STREQ("jsmith", hdr.username);
+    TEST_ASSERT(!hdr.username);
     TEST_ASSERT_STREQ(hdr.realm, "protected area");
     TEST_ASSERT(strlen(hdr.X) == 0);
     TEST_ASSERT_STREQ(hdr.Y, "0123456789abcdef");
@@ -371,12 +371,11 @@ void test_www_authenticate_hdr(void) {
     CLEAR_HEADER(&hdr);
     hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
     hdr.realm = "protected area";
-    hdr.username = "jsmith";
     strcpy(hdr.Y, "0123456789abcdef");
     char header_line[1000];
     memset((void *)&header_line, 0, sizeof(header_line));
     TEST_ASSERT(tcpcrypt_http_header_stringify(header_line, &hdr, 0));
-    char *exp_header_line = "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\" username=\"jsmith\"";
+    char *exp_header_line = "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"";
     TEST_ASSERT_STREQ(exp_header_line, header_line);
 }
 

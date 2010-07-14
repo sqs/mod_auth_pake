@@ -413,11 +413,9 @@ void make_stage2_auth_challenge(request_rec *r,
     const char *username = NULL;
     BN_CTX *ctx = NULL;
 
-    username = resp->hdr.username;
     tcpcrypt_http_header_clear(&resp->hdr);
     resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
     resp->hdr.realm = conf->realm;
-    resp->hdr.username = username;
 
     assert(conf->pake.server_state.Y);
     Yhex = EC_POINT_point2hex(conf->pake.public.G, conf->pake.server_state.Y,
