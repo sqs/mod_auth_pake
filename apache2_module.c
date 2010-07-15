@@ -403,7 +403,7 @@ void make_stage1_auth_challenge(request_rec *r,
     auth_header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
     assert(tcpcrypt_http_header_stringify(auth_header_line, &resp->hdr, 1));
 
-    link_header_line = "<http://localhost:8080/.well-known/amcd.json>; rel=\"acct-mgmt\"";
+    link_header_line = "<http://localhost:8080/amcd.json>; rel=\"acct-mgmt\"";
 
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", auth_header_line);    
     apr_table_mergen(r->err_headers_out, "Link", link_header_line);
