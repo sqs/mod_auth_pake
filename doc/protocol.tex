@@ -1,11 +1,12 @@
-\documentclass[10pt]{article}
-\usepackage[top=0.5cm, bottom=0.5cm, left=0.5cm, right=0.5cm]{geometry}
-%\usepackage{savetrees}
+\documentclass[11pt]{article}
+%\usepackage[top=0.5cm, bottom=0.5cm, left=0.5cm, right=0.5cm]{geometry}
+\usepackage{savetrees}
 %\usepackage{times}
 \usepackage{amsmath}
 \usepackage{multirow}
 \usepackage{multicol}
 \usepackage{mathtools} % shortintertext
+\usepackage{alltt}
 
 \begin{document}
 
@@ -18,40 +19,32 @@
 
 \section{Definitions}
 
-\begin{multicols}{2}
+%\begin{multicols}{2}
 
-\subsection*{Public}
+Publicly select $\mathbf{G}$ to be a group of prime order on which CDH is hard and $g$ to be a generator of $\mathbf{G},$ and choose $U$ and $V$ at random from $\mathbf{G}.$ At signup, the client stores
 \begin{align*}
-\textrm{username, realm} &: \textit{strings}\\
-\mathbf{G} &: \textrm{group of prime order $q$ on which CDH is hard}\\
-g &: \textrm{a generator of $\mathbf{G}$} \\
-U,\, V &: \textrm{chosen at random from $\mathbf{G}$} \\
-H_0,\, H_1 &: \textrm{crypto hash fn., strings $\to$ elems of $\mathbf{Z}_q$} \\
-H &: \textrm{hash fn. on bit strings size of MAC key} \\
+\pi_0 &= H_0(\textrm{username}, \textrm{password}, \textrm{realm}) \textrm{ \;\;and } \\
+\pi_1 &= H_1(\textrm{username}, \textrm{password}, \textrm{realm})
 \end{align*}
+and sends $\pi_0$ and $L=g^{\pi_1}$ to the server.\\
 
-\subsection*{Shared secrets (known to client and server)}
-\begin{align*}
-\pi_0 &= H_0(\textrm{password}, \textrm{username}, \textrm{server name}) \\
-L &= g^{\pi_1}
-\shortintertext{\subsection*{Client-side secret}}
-\textrm{password} &: \textit{string}\\
-\pi_1 &= H_1(\textrm{password}, \textrm{username}, \textrm{server name})
-\end{align*}
-
-\end{multicols}
+%\end{multicols}
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \section{Protocol}
 
-\begin{tabular}{p{9.82cm} | p{9.82cm}}
+\begin{tabular}{p{8.9cm} | p{8.9cm}}
 \multicolumn{1}{c}{\bf Client} & \multicolumn{1}{c}{\bf Server} \\
-\hline
 %%%%%%%%%%%%%%%%
-\vspace{0.06cm}{\tt GET /protected} \\
+\hline
+\multicolumn{2}{c}{Client sends unauthenticated request.} \\
+
+{\tt GET /protected} \\
 
 %%%%%%%%%%%%%%%%
+\hline
+\multicolumn{2}{c}{{\bf Client claim round}} \\
 & 
 {\tt 401 Unauthorized}
 
@@ -63,60 +56,91 @@ L &= g^{\pi_1}
 \begin{verbatim}
 GET /protected
 Authorization: Tcpcrypt 
-               username=<username> realm=<realm>
+               username=<username>
+               realm=<realm>
 \end{verbatim} \\
+
+%\multicolumn{2}{c}{End client claim round.} \\
+%\hline
 
 %%%%%%%%%%%%%%%%
+\hline
+\multicolumn{2}{c}{{\bf Client auth round}} \\
+
 & Choose $\beta \in \mathbf{Z}_q$ at random.
 
-Compute $Y=g^\beta V^{\pi_0}.$
-
-\begin{verbatim}
+\begin{alltt}
 401 Unauthorized
-WWW-Authenticate: Tcpcrypt 
-                  realm=<realm>, Y=<Y>
-\end{verbatim} \\
+WWW-Authenticate: Tcpcrypt realm=<realm>
+                  Y=\(g\sp{\beta}V\sp{\pi\sb{0}}\)
+\end{alltt} \\
 
 %%%%%%%%%%%%%%%
 Choose $\alpha \in \mathbf{Z}_q$ at random.
 
-Compute $g^\beta = g^\beta V^{\pi_0} V^{-\pi_0}.$
-
 Compute $h = H(\pi_0,\, X,\, Y,\, g^{\alpha \beta},\, g^{\pi_1 \beta}).$
 
-Compute ${\tt respc} = \operatorname{MAC}(h,\, {\tt TAG\_CLIENT} | sid).$
-
-Compute $X=g^\alpha U^{\pi_0}.$
-
-\begin{verbatim}
+\begin{alltt}
 Authorization: Tcpcrypt 
-               X=<X>, username=<username>,
-               respc=<respc>, realm=<realm>
-\end{verbatim}
+               username=<username>
+               realm=<realm>
+               X=\(g\sp{\alpha}U\sp{\pi\sb{0}}\)
+               respc=\(\operatorname{MAC}(h,\texttt{TAG\_CLIENT}|sid)\)
+\end{alltt}
 
 & \\
 
+%\multicolumn{2}{c}{End client auth round.} \\
+%\hline
+
 %%%%%%%%%%%%%%%%
-& Compute $g^\alpha = g^\alpha U^{\pi_0} U^{-\pi_0}.$
+\hline
+\multicolumn{2}{c}{{\bf Server auth round}} \\
 
-Compute $g^{\pi_1 \beta} = L^\beta.$
-
+&
 Compute $h$ (in the same way as the client).
 
 Compute {\tt respc}, and continue if matches client {\tt respc}.
 
-Compute ${\tt resps} = \operatorname{MAC}(h,\, {\tt TAG\_SERVER} | sid).$
-\begin{verbatim}
+\begin{alltt}
 200 OK
 Authentication-Info: Tcpcrypt 
-                     resps=<resps>
+                     resps=\(\operatorname{MAC}(h,\texttt{TAG\_SERVER}|sid)\)
 
-<contents of /protected>
-\end{verbatim} \\
+<response data>
+\end{alltt} \\
 
 %%%%%%%%%%%%%%%%
-Compute ${\tt resps}$, and show page if matches server {\tt resps}.
+Compute ${\tt resps}$, and show page if matches server {\tt resps}. \\
+
+%\multicolumn{2}{c}{End server auth round.} \\
+\hline
 \end{tabular}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\pagebreak
+
+%\begin{multicols}{2}
+\section{Known issues}
+
+\subsection{Leaks header information (way worse than SSL)}
+An SSL MITM can only see the hostname of the client request, but a Tcpcrypt auth MITM can see the request URL and all of the headers (and potentially POSTDATA, but that can be fixed). This is because with SSL, authentication occurs before the first HTTP request is sent; with Tcpcrypt auth, however, the first HTTP request is sent before the server has authenticated.
+
+If clients were required to first request a special endpoint URL (such as {\tt /tcpcrypt}) on every unauthenticated servers, this would add one roundtrip to all HTTP requests to unique hosts, even if Tcpcrypt auth were not desired.
+
+If all Tcpcrypt auth-protected resources were required to live below a special path \\
+ (e.g., {\tt /tcpcrypt/wiki/Tiananmen\_Square}) and clients had to first authenticate to {\tt /tcpcrypt}, the above problem of extra roundtrips for each unique host would be avoided. But it would require radical, ugly changes to Web applications and browsers.
+
+One possible solution is that URLs for Tcpcrypt auth-protected resources could {\it always} include the username, to indicate that Tcpcrypt auth is required (e.g., {\tt http://jsmith@example.com/path}). If the client had already authenticated as {\tt jsmith} with the server, the client would request the path normally. If no such session yet existed, the client would first attempt authentication to the root {\tt /} (without sending cookies) and only request the actual path after authentication succeeded.
+
+\subsection{Requires 1 more roundtrip than Digest in some cases}
+The server must know the client's username before it can calculate $Y.$ If the client's browser remembers the username and realm that was previously used for the URL, or if the client submits from a special Tcpcrypt login form on a Web page, then an extra roundtrip isn't needed. But if the client's first request is unauthenticated, an extra roundtrip is needed to determine the username. This is not a significant problem because even though Digest theoretically needs one fewer roundtrip, in practice Web sites have not adopted Digest and instead have chosen to redirect the user to a whole new login page, often dynamically generated at great cost.
+
+\subsection{Denial of service attack against server}
+TODO: See whether a client can make the server do a lot of work without the client having to do a comparable amount of work.
+
+%\end{multicols}
 
 \end{document}
 
