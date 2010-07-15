@@ -12,10 +12,12 @@
 #include <curl/curl.h>
 #include <openssl/sha.h>
 #include <assert.h>
+#include "test_http_tcpcrypt_auth.h"
 #include "tcpcrypt_session.h"
 #include "http_header.h"
 #include "http_tcpcrypt_auth.h"
 #include "test_pake.h"
+#include "test_acctmgmt.h"
 #include "pake.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
@@ -63,11 +65,6 @@ struct test {
  * HTTP stuff
  */
 
-struct chunk {
-  char *data;
-  size_t size;
-};
-
 static size_t
 WriteMemoryCallback(void *ptr, size_t size, size_t nmemb, void *data)
 {
@@ -82,21 +79,6 @@ WriteMemoryCallback(void *ptr, size_t size, size_t nmemb, void *data)
   }
   return realsize;
 }
-
-
-struct http_request {
-    char *url;
-    char *user;
-    char *pw;
-    char *realm;
-};
-
-struct http_response {
-    CURLcode curl_code;
-    long int status;
-    struct chunk body;
-    struct curl_slist *headers;
-};
 
 static size_t
 header_callback(void *ptr, size_t size, size_t nmemb, void *res_) {
@@ -387,6 +369,7 @@ static struct test _tests[] = {
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_apache_rejects_bad_username, "test_apache_rejects_bad_username" },
     { test_apache_rejects_bad_realm, "test_apache_rejects_bad_realm" },
+    { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
