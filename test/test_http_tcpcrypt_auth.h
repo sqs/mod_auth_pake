@@ -2,6 +2,17 @@
 #define TEST_HTTP_TCPCRYPT_AUTH_H
 #include <curl/curl.h>
 
+#define TEST_HOST "localhost"
+#define TEST_PORT "8080"
+#define TEST_PROTECTED_PATH "protected/"
+#define TEST_PROTECTED_PATH2 "protected/abc.txt"
+#define TEST_ROOT_URL "http://" TEST_HOST ":" TEST_PORT "/"
+#define TEST_PROTECTED_URL TEST_ROOT_URL TEST_PROTECTED_PATH
+#define TEST_PROTECTED_URL2 TEST_ROOT_URL TEST_PROTECTED_PATH2
+#define TEST_USER1 "jsmith"
+#define TEST_REALM1 "protected area"
+#define TEST_PW1 "jsmith"
+
 struct http_request {
     char *url;
     char *user;
@@ -20,5 +31,8 @@ struct http_response {
     struct chunk body;
     struct curl_slist *headers;
 };
+
+char *header_val(struct http_response *res, char *header_prefix);
+void do_http_request(struct http_request *req, struct http_response *res);
 
 #endif // TEST_HTTP_TCPCRYPT_AUTH_H

@@ -23,16 +23,6 @@
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests
 
-#define TEST_HOST "localhost"
-#define TEST_PORT "8080"
-#define TEST_PROTECTED_PATH "protected/"
-#define TEST_PROTECTED_PATH2 "protected/abc.txt"
-#define TEST_ROOT_URL "http://" TEST_HOST ":" TEST_PORT "/"
-#define TEST_PROTECTED_URL TEST_ROOT_URL TEST_PROTECTED_PATH
-#define TEST_PROTECTED_URL2 TEST_ROOT_URL TEST_PROTECTED_PATH2
-#define TEST_USER1 "jsmith"
-#define TEST_REALM1 "protected area"
-#define TEST_PW1 "jsmith"
 
 void CLEAR_HEADER(struct tcpcrypt_http_header *hdr) {
     memset(hdr, 0, sizeof(*hdr));
@@ -369,7 +359,8 @@ static struct test _tests[] = {
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_apache_rejects_bad_username, "test_apache_rejects_bad_username" },
     { test_apache_rejects_bad_realm, "test_apache_rejects_bad_realm" },
-    { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
+    //    { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
+    { test_parses_acctmgmt_link, "test_parses_acctmgmt_link" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
