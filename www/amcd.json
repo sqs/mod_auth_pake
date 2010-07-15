@@ -1,0 +1,51 @@
+{
+  "methods": {
+    "http-auth": {
+      "connect": {
+        "method": "GET",
+        "path": "/signin/"
+      },
+      "disconnect": {
+        "method": "GET",
+        "path": "/signout/"
+      }
+    }
+    "username-password-form": {
+      "connect": {
+        "method":"POST",
+        "path":"/signin/",
+        "params": {
+          "username":"unam",
+          "password":"pwd"
+        }
+      },
+      "disconnect": {
+        "method":"POST",
+        "path":"/signout/"
+      },
+      "register": {
+        "method":"POST",
+        "path":"/register/",
+        "type": "email"
+      },
+      "changepassword": {
+        "method":"POST",
+        "path":"/changepass/",
+        "params": {
+          "username":"unam",
+          "old_password":"old_pwd",
+          "password":"pwd",
+          "password_verify":"pwd2"
+        }
+      },
+      "sessionstatus": {
+          "method":"GET",
+          "path":"/sessionstatus"
+      },
+      "accountstatus": {
+          "method":"GET",
+          "path":"/account_status"
+      }
+    }
+  }
+}

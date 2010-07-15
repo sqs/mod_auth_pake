@@ -25,4 +25,6 @@ test: test_build
 htpake:
 	gcc -g -Wall -Werror -lssl -std=c99 -I. htpake.c pake.c -o htpake
 
+www:
+	cp -R www/ /var/www/
 
