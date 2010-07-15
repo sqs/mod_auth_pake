@@ -359,7 +359,7 @@ static struct test _tests[] = {
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
     { test_apache_rejects_bad_username, "test_apache_rejects_bad_username" },
     { test_apache_rejects_bad_realm, "test_apache_rejects_bad_realm" },
-    //    { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
+    { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
     { test_parses_acctmgmt_link, "test_parses_acctmgmt_link" },
 };
 

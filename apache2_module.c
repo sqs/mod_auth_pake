@@ -252,7 +252,7 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     } else if (resp->auth_hdr_sts == VALID_STAGE1) {
         return authorize_stage1(r, conf, resp);
     } else if (resp->auth_hdr_sts == VALID_STAGE2) {
-        return authorize_stage2(r, conf, resp);
+         return authorize_stage2(r, conf, resp);
     } else { /* NO_HEADER */
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -393,16 +393,20 @@ void make_stage1_auth_challenge(request_rec *r,
                          const auth_tcpcrypt_config_rec *conf,
                          auth_tcpcrypt_header_rec *resp)
 {
-    char *header_line = NULL;
+    char *auth_header_line = NULL, *link_header_line = NULL;
 
     tcpcrypt_http_header_clear(&resp->hdr);
     resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1;
     resp->hdr.realm = conf->realm;
     resp->hdr.username = NULL;
 
-    header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
-    assert(tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1));
-    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);    
+    auth_header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
+    assert(tcpcrypt_http_header_stringify(auth_header_line, &resp->hdr, 1));
+
+    link_header_line = "<http://localhost:8080/.well-known/amcd.json>; rel=\"acct-mgmt\"";
+
+    apr_table_mergen(r->err_headers_out, "WWW-Authenticate", auth_header_line);    
+    apr_table_mergen(r->err_headers_out, "Link", link_header_line);
 }
 
 void make_stage2_auth_challenge(request_rec *r,
