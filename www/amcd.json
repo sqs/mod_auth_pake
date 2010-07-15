@@ -1,9 +1,9 @@
 {
-    "methods": {
-        "pake": {
-            "connect": {
-                "path": "/protected/"
-            }
-        },
-    }
+  "methods": {
+    "pake": {
+      "connect": {
+        "path": "/protected/"
+      }
+    },
+  }
 }
