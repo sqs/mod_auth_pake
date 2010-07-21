@@ -270,6 +270,12 @@ int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
 
     return_code = get_user_pake_info(r, r->user, conf);
 
+    /* TODO: vulnerable to a timing attack to discover whether a username has
+       an account on this server? */
+    /* TODO: if user not found or denied, we MUST send back a dummy stage2
+       anyway so that an attacker can't discover if a user has an account --
+       the todo here is to craft that dummy stage2 in a way that also doesn't
+       give out any other information inadvertently */
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: user `%s' in realm `%s' not found: %s",
