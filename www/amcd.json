@@ -1,0 +1,9 @@
+{
+  "methods": {
+    "pake": {
+      "connect": {
+        "path": "/protected/"
+      }
+    },
+  }
+}

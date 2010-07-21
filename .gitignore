@@ -8,3 +8,4 @@ TAGS
 tcpcrypt_http_pake
 htpake
 htpake.o
+*.o
