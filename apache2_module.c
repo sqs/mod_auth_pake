@@ -109,17 +109,14 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
                                        auth_tcpcrypt_config_rec *conf)
 {   
     BIGNUM *beta;
-    struct pake_info *pake = &conf->pake;
-    memset(pake, 0, sizeof(*pake));
+    conf->pake = pake_server_new();
+    /* TODO: error checking and free if error */
 
-    conf->bn_ctx = BN_CTX_new();
-    BN_CTX_start(conf->bn_ctx);
-    
     /* make beta = H(sid, auth_tcpcryppt_secret) */
     beta = make_beta(auth_tcpcrypt_secret);
     assert(beta);
 
-    if (!pake_server_init(pake, conf->bn_ctx, beta)) {
+    if (!pake_server_init(conf->pake, beta)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_tcpcrypt: couldn't init pake: %s", r->uri);
         return AUTH_USER_NOT_FOUND;
@@ -166,21 +163,21 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 
     BIGNUM *pi_0 = BN_new();
     assert(BN_hex2bn(&pi_0, file_pi_0));
-    assert(conf->pake.public.G);
+    assert(conf->pake->public.G);
 
-    EC_POINT *L = EC_POINT_new(conf->pake.public.G);
-    EC_POINT_hex2point(conf->pake.public.G, file_L, L, conf->bn_ctx);
+    EC_POINT *L = EC_POINT_new(conf->pake->public.G);
+    EC_POINT_hex2point(conf->pake->public.G, file_L, L, conf->bn_ctx);
     assert(L);
         
     if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                                 "L = %s, pi_0 = %s", 
-                                EC_POINT_point2hex(conf->pake.public.G, L,
+                                EC_POINT_point2hex(conf->pake->public.G, L,
                                                    POINT_CONVERSION_UNCOMPRESSED,
                                                    conf->bn_ctx),
                                 BN_bn2hex(pi_0));
 
-    if (!pake_server_set_credentials(&conf->pake, username, conf->realm,
-                                     pi_0, L, conf->bn_ctx)) {
+    if (!pake_server_set_credentials(conf->pake, username, 
+                                     conf->realm, pi_0, L)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_tcpcrypt: couldn't set server credentials: %s", r->uri);
         return AUTH_USER_NOT_FOUND;
@@ -313,24 +310,24 @@ int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
     }
      
     /* recv client X */
-    EC_POINT *X = EC_POINT_new(conf->pake.public.G);
-    if (!EC_POINT_hex2point(conf->pake.public.G, resp->hdr.X, X, conf->bn_ctx)) {
+    EC_POINT *X = EC_POINT_new(conf->pake->public.G);
+    if (!EC_POINT_hex2point(conf->pake->public.G, resp->hdr.X, X, conf->bn_ctx)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: couldn't convert hex X to EC_POINT: X=%s, uri=%s",
                       resp->hdr.X, r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
-    pake_server_recv_X(&conf->pake, X);
+    pake_server_recv_X(conf->pake, X);
 
     /* compute expected respc */
-    if (!tcpcrypt_pake_compute_respc(&conf->pake, tcpcrypt_get_sid(), conf->bn_ctx)) {
+    if (!tcpcrypt_pake_compute_respc(conf->pake, tcpcrypt_get_sid())) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_tcpcrypt: couldn't compute expected respc: uri=%s",
                       r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
-    char *exp_respc = conf->pake.shared.respc;
+    char *exp_respc = conf->pake->shared.respc;
     char *client_respc = resp->hdr.respc;
     if (strcmp(exp_respc, client_respc)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
@@ -364,9 +361,9 @@ static int add_auth_info(request_rec *r)
         return OK;
     }
 
-    tcpcrypt_pake_compute_resps(&conf->pake, tcpcrypt_get_sid(), conf->bn_ctx);
+    tcpcrypt_pake_compute_resps(conf->pake, tcpcrypt_get_sid());
     
-    if (!conf->pake.shared.resps) {
+    if (!conf->pake->shared.resps) {
         /* we failed to allocate a client struct */
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -375,7 +372,7 @@ static int add_auth_info(request_rec *r)
      */
     tcpcrypt_http_header_clear(&hdr);
     hdr.type = TCPCRYPT_HTTP_AUTHENTICATION_INFO;
-    strcpy(hdr.resps, conf->pake.shared.resps);
+    strcpy(hdr.resps, conf->pake->shared.resps);
     ai = apr_palloc(r->pool, TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH);
     tcpcrypt_http_header_stringify(ai, &hdr, 1);
     if (ai && ai[0]) {
@@ -421,8 +418,8 @@ void make_stage2_auth_challenge(request_rec *r,
     resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
     resp->hdr.realm = conf->realm;
 
-    assert(conf->pake.server_state.Y);
-    Yhex = EC_POINT_point2hex(conf->pake.public.G, conf->pake.server_state.Y,
+    assert(conf->pake->server_state.Y);
+    Yhex = EC_POINT_point2hex(conf->pake->public.G, conf->pake->server_state.Y,
                               POINT_CONVERSION_UNCOMPRESSED, ctx);
     strcpy(resp->hdr.Y, Yhex);
     OPENSSL_free(Yhex);

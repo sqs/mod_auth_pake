@@ -40,7 +40,7 @@ typedef struct auth_tcpcrypt_config_struct {
     const char  *realm;
     const char *pakefile;
     BN_CTX      *bn_ctx;
-    struct pake_info pake;
+    struct pake_info *pake;
 } auth_tcpcrypt_config_rec;
 
 

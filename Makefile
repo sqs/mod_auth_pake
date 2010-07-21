@@ -1,11 +1,20 @@
-CURL=-lcurl
+export CC=gcc
+export CFLAGS=-Wall -Werror -g
 
-default: local
+export SRC=apache2_module.c apache2_module_init.c tcpcrypt_session.c http_header.c contrib/curl_http_kv_parser.c
+export OBJ=$(SRC:.c=.o)
+export INCLUDES=-I. -Icontrib -I/home/sqs/src/pake/src
+export LDFLAGS=-L/home/sqs/src/pake/
+export LIBS=-lssl -lpake
 
-local: auth_tcpcrypt.o
+.PHONY: test clean build restart
 
-auth_tcpcrypt.o:
-	apxs2 -I. -Icontrib -lssl -cia -Wc,-g apache2_module.c apache2_module_init.c tcpcrypt_session.c http_header.c pake.c contrib/curl_http_kv_parser.c
+.SUFFIXES: .c
+
+default: build
+
+build:
+	apxs2 $(INCLUDES) $(LIBS) $(LDFLAGS) -cia -Wc,-g $(SRC)
 
 clean:
 	rm -f *.o *.so *.slo *.lo *.la *.pyc
@@ -14,17 +23,11 @@ clean:
 restart:
 	sudo /etc/init.d/apache2 restart
 
-test_http_tcpcrypt_auth.o:
-	gcc -B/usr/lib/compat-ld -g -Wall -Werror -L/usr/lib -lssl -std=c99 -I`pwd` -Icontrib -I../tcpcrypt/code/user ${CURL} -o test/test_http_tcpcrypt_auth test/test_http_tcpcrypt_auth.c pake.c test/test_pake.c test/test_acctmgmt.c http_header.c contrib/curl_http_kv_parser.c http_tcpcrypt_auth.c tcpcrypt_session.c
-
-test_build: test_http_tcpcrypt_auth.o
-
-test: test_build
-	test/test_http_tcpcrypt_auth
-
 htpake:
-	gcc -g -Wall -Werror -lssl -std=c99 -I. htpake.c pake.c -o htpake
+	gcc $(CFLAGS) $(INCLUDES) $(LDFLAGS) $(LIBS) -std=c99 htpake.c -o htpake
 
-www:
-	cp -R www/ /var/www/
+test:
+	$(MAKE) -C test
 
+test_build:
+	$(MAKE) -C test build

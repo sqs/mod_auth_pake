@@ -16,7 +16,6 @@
 #include "tcpcrypt_session.h"
 #include "http_header.h"
 #include "http_tcpcrypt_auth.h"
-#include "test_pake.h"
 #include "test_acctmgmt.h"
 #include "pake.h"
 
@@ -171,34 +170,25 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char
     req_hdr.username = username;
     req_hdr.realm = realm;
 
-    struct pake_info pc;
-    BN_CTX *ctx = NULL;
-    memset(&pc, 0, sizeof(pc));
-    assert(ctx = BN_CTX_new());
-    BN_CTX_start(ctx);
-    assert(pake_client_init(&pc, ctx));
-    assert(pake_client_set_credentials(&pc, username, realm, password, ctx));
+    struct pake_info *pc = pake_client_new();
+    assert(pake_client_init(pc));
+    assert(pake_client_set_credentials(pc, username, realm, password));
 
-    EC_POINT *Y = EC_POINT_new(pc.public.G);
-    EC_POINT_hex2point(pc.public.G, res_hdr->Y, Y, ctx);
-    pake_client_recv_Y(&pc, Y);
-    assert(pc.client_state.X);
-    assert(pc.client_state.server_Y);
+    pake_client_recv_Y_string(pc, res_hdr->Y);
+    assert(pc->client_state.X);
+    assert(pc->client_state.server_Y);
     
-    char *s;
-    s = EC_POINT_point2hex(pc.public.G, pc.client_state.X, POINT_CONVERSION_UNCOMPRESSED, ctx);
-    strcpy(req_hdr.X, s);
-    OPENSSL_free(s);
+    strcpy(req_hdr.X, pake_client_get_X_string(pc));
     
-    tcpcrypt_pake_compute_respc(&pc, tcpcrypt_get_sid(), ctx);
-    strcpy(req_hdr.respc, (char *)pc.shared.respc);
+    tcpcrypt_pake_compute_respc(pc, tcpcrypt_get_sid());
+    strcpy(req_hdr.respc, (char *)pc->shared.respc);
 
     assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
     if (detailed) printf("make auth hdr: '%s'\n", header_line);
 
     /* save expected resps to exp_resps */
-    tcpcrypt_pake_compute_resps(&pc, tcpcrypt_get_sid(), ctx);
-    strcpy(exp_resps, (char *)pc.shared.resps);
+    tcpcrypt_pake_compute_resps(pc, tcpcrypt_get_sid());
+    strcpy(exp_resps, (char *)pc->shared.resps);
 }
 
 void test_apache_www_authenticate_hdr(void) {
@@ -352,7 +342,6 @@ void test_www_authenticate_hdr(void) {
 }
 
 static struct test _tests[] = {
-    { test_pake, "test_pake" },
     { test_apache_authorizes, "test_apache_authorizes"},
     { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
