@@ -94,6 +94,3 @@ void test_am_status_inactive() {
     assert(strncmp(" none", am_hdr, strlen(" none")) == 0);
 }
 
-void test_am_status_active() {
-
-}

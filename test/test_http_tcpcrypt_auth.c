@@ -37,7 +37,7 @@ static CURL *curl;
 
 void TEST_ASSERT_STREQ(const char *s1, const char *s2) {
     if (strcmp(s1, s2)) {
-        fprintf(stderr, "TEST_ASSERT_STREQ: expected %s, got %s\n", s1, s2);
+        fprintf(stderr, "TEST_ASSERT_STREQ: expected '%s', got '%s'\n", s1, s2);
         assert(strcmp(s1, s2) == 0);
     }
 }
@@ -341,6 +341,38 @@ void test_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ(exp_header_line, header_line);
 }
 
+void test_am_status_active() {
+    /* Mostly copied from test_apache_authorizes -- TODO(sqs): reduce duplication */
+    struct http_request req;
+    struct http_response res;
+    static struct tcpcrypt_http_header hdr;
+    
+    req.url = TEST_PROTECTED_URL;
+    set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));
+    do_http_request(&req, &res);
+    get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
+    TEST_ASSERT(res.status == 401);
+    if (res.status != 401) return;
+    
+    char auth_hdr[1000], exp_resps[RESP_LENGTH];
+    make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, TEST_REALM1, TEST_PW1);
+    set_auth_hdr(curl, auth_hdr);
+
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 200);
+    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\"\r\n", 
+                      header_val(&res, "X-Account-Management-Status:"));
+    
+    /* try getting another file with the same auth hdr */
+    req.url = TEST_PROTECTED_URL2;
+    set_auth_hdr(curl, auth_hdr);
+    do_http_request(&req, &res);
+    TEST_ASSERT(res.status == 200);
+
+    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\"\r\n", 
+                      header_val(&res, "X-Account-Management-Status:"));
+}
+
 static struct test _tests[] = {
     { test_apache_authorizes, "test_apache_authorizes"},
     { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
@@ -351,6 +383,7 @@ static struct test _tests[] = {
     { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
     { test_parses_acctmgmt_link, "test_parses_acctmgmt_link" },
     { test_am_status_inactive, "test_am_status_inactive" },
+    { test_am_status_active, "test_am_status_active" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */

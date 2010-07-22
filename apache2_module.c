@@ -361,7 +361,7 @@ static int add_auth_info(request_rec *r)
     auth_tcpcrypt_header_rec *resp =
         (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
                                                           &auth_tcpcrypt_module);
-    char *ai, *resp_dig = NULL;
+    char *ai, *resp_dig = NULL, *am = NULL;
 
     if (resp == NULL || !resp->needed_auth || conf == NULL || !resp->auth_ok) {
         return OK;
@@ -384,6 +384,12 @@ static int add_auth_info(request_rec *r)
     if (ai && ai[0]) {
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);
     }
+
+    /* assemble X-Account-Management-Status header */
+    /* TODO(sqs): escape semicolons in quoted vals */
+    am = apr_psprintf(r->pool, "active; name=\"%s\"; id=\"%s\"", 
+                      r->user, r->user);
+    apr_table_mergen(r->err_headers_out, "X-Account-Management-Status", am);
 
     return OK;
 }
