@@ -7,20 +7,20 @@ export INCLUDES=-I. -Icontrib -I/home/sqs/src/pake/src
 export LDFLAGS=-L/home/sqs/src/pake/
 export LIBS=-lssl -lpake
 
-.PHONY: test clean build restart
+.PHONY: test clean restart
 
 .SUFFIXES: .c
 
 default: build
 
-build:
+build: $(SRC)
 	apxs2 $(INCLUDES) $(LIBS) $(LDFLAGS) -cia -Wc,-g $(SRC)
 
 clean:
 	rm -f *.o *.so *.slo *.lo *.la *.pyc
 	rm -rf .libs/
 
-restart:
+buildre: build
 	sudo /etc/init.d/apache2 restart
 
 htpake:
