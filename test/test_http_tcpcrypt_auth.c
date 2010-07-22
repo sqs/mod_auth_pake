@@ -350,6 +350,7 @@ static struct test _tests[] = {
     { test_apache_rejects_bad_realm, "test_apache_rejects_bad_realm" },
     { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
     { test_parses_acctmgmt_link, "test_parses_acctmgmt_link" },
+    { test_am_status_inactive, "test_am_status_inactive" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */

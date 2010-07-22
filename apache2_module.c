@@ -396,7 +396,8 @@ void make_stage1_auth_challenge(request_rec *r,
                          const auth_tcpcrypt_config_rec *conf,
                          auth_tcpcrypt_header_rec *resp)
 {
-    char *auth_header_line = NULL, *link_header_line = NULL;
+    char *auth_header_line = NULL, *link_header_line = NULL, 
+         *am_status_line = NULL;
 
     tcpcrypt_http_header_clear(&resp->hdr);
     resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1;
@@ -407,9 +408,11 @@ void make_stage1_auth_challenge(request_rec *r,
     assert(tcpcrypt_http_header_stringify(auth_header_line, &resp->hdr, 1));
 
     link_header_line = "<http://localhost:8080/amcd.json>; rel=\"acct-mgmt\"";
+    am_status_line = "none";
 
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", auth_header_line);    
     apr_table_mergen(r->err_headers_out, "Link", link_header_line);
+    apr_table_mergen(r->err_headers_out, "X-Account-Management-Status", am_status_line);
 }
 
 void make_stage2_auth_challenge(request_rec *r,

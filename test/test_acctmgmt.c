@@ -77,3 +77,23 @@ void test_advertises_acctmgmt_realm() {
     assert(link_url);
     assert(strcmp("acct-mgmt", link_rel) == 0);
 }
+
+void test_am_status_inactive() {
+    struct http_request req;
+    struct http_response res;
+    char *am_hdr;
+
+    req.url = TEST_PROTECTED_URL;
+    do_http_request(&req, &res);
+    am_hdr = header_val(&res, "X-Account-Management-Status:");
+
+    /* want something like:
+       X-Account-Management-Status: none
+     */
+    assert(am_hdr);
+    assert(strncmp(" none", am_hdr, strlen(" none")) == 0);
+}
+
+void test_am_status_active() {
+
+}

@@ -4,4 +4,7 @@
 void test_advertises_acctmgmt_realm();
 void test_parses_acctmgmt_link();
 
+void test_am_status_inactive();
+void test_am_status_active();
+
 #endif // TEST_ACCTMGMT_H
