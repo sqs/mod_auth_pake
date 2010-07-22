@@ -24,4 +24,4 @@ clean:
 	rm -f $(OBJ) $(OUT)
 
 www:
-	cp -R www/ /var/www/
+	cp -R ../www/* ../www/.well-known /var/www/
