@@ -9,6 +9,6 @@
         "method": "GET",
         "path": "/protected/"
       }
-    },
+    }
   }
 }
