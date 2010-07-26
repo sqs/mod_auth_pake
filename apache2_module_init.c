@@ -80,13 +80,14 @@ const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
     int i;
     auth_tcpcrypt_config_rec *conf = (auth_tcpcrypt_config_rec *) config;
 
-    /* Only allow [a-zA-Z0-9 _] in realm. This means we don't have to escape
+    /* Only allow [a-zA-Z0-9 _:/.] in realm. This means we don't have to escape
        the realm string on the server side. Of course, clients can send back a
        bad realm in the Authorization: header, but we can reject it instead of
        having to unescape it and/or reject it. */
     for (i = 0; i < strlen(realm); ++i) {
         char c = realm[i];
-        if (!isalnum(c) && c != ' ' && c != '_') {
+        if (!isalnum(c) && c != ' ' && c != '_' && c != ':' && c != '/' &&
+            c != '.') {
             return apr_psprintf(cmd->pool, 
                                 "Invalid AuthName '%s': must only contain [a-zA-Z0-9 _]",
                                 realm);
