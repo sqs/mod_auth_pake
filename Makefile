@@ -20,7 +20,9 @@ clean:
 	rm -f *.o *.so *.slo *.lo *.la *.pyc
 	rm -rf .libs/
 
-buildre: build
+buildre: build restart
+
+restart:
 	sudo /etc/init.d/apache2 restart
 
 htpake:
