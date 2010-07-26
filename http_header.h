@@ -8,9 +8,9 @@
 #define MAX_BN_STRING_LENGTH RESP_LENGTH
 #define MAX_EC_POINT_STRING_LENGTH (MAX_BN_STRING_LENGTH*2 + 3)
 
-#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\"") + strlen((hdr)->realm))
-#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\" Y=\"\"") + strlen((hdr)->realm) + MAX_EC_POINT_STRING_LENGTH)
-#define TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH (strlen("Tcpcrypt resps=\"\"") + RESP_LENGTH)
+#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\"") + strlen((hdr)->realm) + 1)
+#define TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(hdr) (strlen("Tcpcrypt realm=\"\" Y=\"\"") + strlen((hdr)->realm) + MAX_EC_POINT_STRING_LENGTH + 1)
+#define TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH (strlen("Tcpcrypt resps=\"\"") + RESP_LENGTH + 1)
 
 enum tcpcrypt_http_auth_header_type_http {
     HTTP_WWW_AUTHENTICATE,
