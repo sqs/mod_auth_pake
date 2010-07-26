@@ -1,0 +1,4 @@
+AuthType "Tcpcrypt"
+AuthName "protected area"
+Require valid-user
+PAKEFile /var/www/protected/.pake
