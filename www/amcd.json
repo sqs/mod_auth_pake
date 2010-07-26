@@ -2,12 +2,12 @@
   "methods": {
     "http-pake-auth": {
       "connect": {
-        "path": "/protected/",
+        "path": "/am/",
         "realm": "protected area"
       },
       "sessionstatus": {
         "method": "GET",
-        "path": "/protected/"
+        "path": "/am/"
       }
     }
   }
