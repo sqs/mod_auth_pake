@@ -7,35 +7,35 @@
 #define APLOG(s...) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, s)
 #define LOG_PAKE 1
 
-int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
-int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp);
+int authorize_stage1(request_rec *r, auth_pake_config_rec *conf, auth_pake_header_rec *resp);
+int authorize_stage2(request_rec *r, auth_pake_config_rec *conf, auth_pake_header_rec *resp);
 
-int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp);
+int parse_authorization_header(request_rec *r, auth_pake_header_rec *resp);
 void make_stage1_auth_challenge(request_rec *r,
-                                const auth_tcpcrypt_config_rec *conf,
-                                auth_tcpcrypt_header_rec *resp);
+                                const auth_pake_config_rec *conf,
+                                auth_pake_header_rec *resp);
 void make_stage2_auth_challenge(request_rec *r,
-                                const auth_tcpcrypt_config_rec *conf,
-                                auth_tcpcrypt_header_rec *resp);
+                                const auth_pake_config_rec *conf,
+                                auth_pake_header_rec *resp);
 
 /* Get the request-uri (before any subrequests etc are initiated) and
  * initialize the request_config.
  */
 static int make_header_rec(request_rec *r)
 {
-    auth_tcpcrypt_header_rec *resp;
+    auth_pake_header_rec *resp;
 
     if (!ap_is_initial_req(r)) {
         return DECLINED;
     }
 
-    resp = apr_pcalloc(r->pool, sizeof(auth_tcpcrypt_header_rec));
+    resp = apr_pcalloc(r->pool, sizeof(auth_pake_header_rec));
     resp->raw_request_uri = r->unparsed_uri;
     resp->psd_request_uri = &r->parsed_uri;
     resp->needed_auth = 0;
     resp->auth_ok = 0;
     resp->method = r->method;
-    ap_set_module_config(r->request_config, &auth_tcpcrypt_module, resp);
+    ap_set_module_config(r->request_config, &auth_pake_module, resp);
 
     parse_authorization_header(r, resp);
 
@@ -47,7 +47,7 @@ static int make_header_rec(request_rec *r)
  */
 
 /* Parse the Authorization header, if it exists */
-int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
+int parse_authorization_header(request_rec *r, auth_pake_header_rec *resp)
 {
     const char *auth_line;
     apr_size_t l;
@@ -60,11 +60,11 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
         return !OK;
     }
 
-    int header_parse_ok = tcpcrypt_http_header_parse(&resp->hdr, 
-                                                     auth_line, HTTP_AUTHORIZATION);
+    int header_parse_ok = pake_http_header_parse(&resp->hdr, 
+                                                 auth_line, HTTP_AUTHORIZATION);
 
-    if (!resp->hdr.auth_name || strcasecmp(resp->hdr.auth_name, "Tcpcrypt")) {
-        resp->auth_hdr_sts = NOT_TCPCRYPT_AUTH;
+    if (!resp->hdr.auth_name || strcasecmp(resp->hdr.auth_name, "PAKE")) {
+        resp->auth_hdr_sts = NOT_PAKE_AUTH;
         return !OK;
     }
 
@@ -75,7 +75,7 @@ int parse_authorization_header(request_rec *r, auth_tcpcrypt_header_rec *resp)
 
     /* set which stage we're on */
     resp->auth_hdr_sts = 
-        resp->hdr.type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE1 ? VALID_STAGE1 : VALID_STAGE2;
+        resp->hdr.type == PAKE_HTTP_AUTHORIZATION_STAGE1 ? VALID_STAGE1 : VALID_STAGE2;
 
     return OK;
 }
@@ -106,19 +106,19 @@ static BIGNUM *make_beta(unsigned char *secret) {
 
 /* Gets pake auth info for `user` (pi_0, pi_1, username) and stores it in `conf`. */
 static authn_status get_user_pake_info(request_rec *r, const char *username,
-                                       auth_tcpcrypt_config_rec *conf)
+                                       auth_pake_config_rec *conf)
 {   
     BIGNUM *beta;
     conf->pake = pake_server_new();
     /* TODO: error checking and free if error */
 
-    /* make beta = H(sid, auth_tcpcryppt_secret) */
-    beta = make_beta(auth_tcpcrypt_secret);
+    /* make beta = H(sid, auth_pake_secret) */
+    beta = make_beta(auth_pake_secret);
     assert(beta);
 
     if (!pake_server_init(conf->pake, beta)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
-                      "auth_tcpcrypt: couldn't init pake: %s", r->uri);
+                      "auth_pake: couldn't init pake: %s", r->uri);
         return AUTH_USER_NOT_FOUND;
     }
 
@@ -179,7 +179,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
     if (!pake_server_set_credentials(conf->pake, username, 
                                      conf->realm, pi_0, L)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
-                      "auth_tcpcrypt: couldn't set server credentials: %s", r->uri);
+                      "auth_pake: couldn't set server credentials: %s", r->uri);
         return AUTH_USER_NOT_FOUND;
     }
 
@@ -190,23 +190,23 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 
 /* Determine user ID, and check if the attributes are correct. */
 
-static int authenticate_tcpcrypt_user(request_rec *r)
+static int authenticate_pake_user(request_rec *r)
 {
-    auth_tcpcrypt_config_rec *conf;
-    auth_tcpcrypt_header_rec *resp;
+    auth_pake_config_rec *conf;
+    auth_pake_header_rec *resp;
     request_rec       *mainreq;
     const char        *t;
     int                res;
 
-    /* do we require Tcpcrypt auth for this URI? */
+    /* do we require PAKE auth for this URI? */
 
-    if (!(t = ap_auth_type(r)) || strcasecmp(t, "Tcpcrypt")) {
+    if (!(t = ap_auth_type(r)) || strcasecmp(t, "PAKE")) {
         return DECLINED;
     }
 
     if (!ap_auth_name(r)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: need AuthName: %s", r->uri);
+                      "auth_pake: need AuthName: %s", r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
 
@@ -220,29 +220,29 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     while (mainreq->prev != NULL) {
         mainreq = mainreq->prev;
     }
-    resp = (auth_tcpcrypt_header_rec *) ap_get_module_config(mainreq->request_config,
-                                                      &auth_tcpcrypt_module);
+    resp = (auth_pake_header_rec *) ap_get_module_config(mainreq->request_config,
+                                                      &auth_pake_module);
     resp->needed_auth = 1;
 
     /* get our conf */
 
-    conf = (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
-                                                      &auth_tcpcrypt_module);
+    conf = (auth_pake_config_rec *) ap_get_module_config(r->per_dir_config,
+                                                      &auth_pake_module);
 
     r->user         = (char *) resp->hdr.username;
-    r->ap_auth_type = (char *) "Tcpcrypt";
+    r->ap_auth_type = (char *) "PAKE";
 
 
     /* check for existence and syntax of Authorization header */
-    if (resp->auth_hdr_sts == NOT_TCPCRYPT_AUTH) {
+    if (resp->auth_hdr_sts == NOT_PAKE_AUTH) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: client used wrong authentication scheme "
+                      "auth_pake: client used wrong authentication scheme "
                       "`%s': %s", resp->hdr.auth_name, r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
     } else if (resp->auth_hdr_sts == INVALID) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: malformed header: %s",
+                      "auth_pake: malformed header: %s",
                       r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -256,13 +256,13 @@ static int authenticate_tcpcrypt_user(request_rec *r)
     }
 }
 
-int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp) {
+int authorize_stage1(request_rec *r, auth_pake_config_rec *conf, auth_pake_header_rec *resp) {
     authn_status       return_code;
 
     /* check realm */
     if (strcmp(resp->hdr.realm, conf->realm)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: realm mismatch - got `%s' but expected `%s'",
+                      "auth_pake: realm mismatch - got `%s' but expected `%s'",
                       resp->hdr.realm, conf->realm);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -278,14 +278,14 @@ int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
        give out any other information inadvertently */
     if (return_code == AUTH_USER_NOT_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user `%s' in realm `%s' not found: %s",
+                      "auth_pake: user `%s' in realm `%s' not found: %s",
                       r->user, conf->realm, r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
     } else if (return_code == AUTH_DENIED) {
         /* authentication denied in the provider before attempting a match */
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user `%s' in realm `%s' denied before stage2: %s",
+                      "auth_pake: user `%s' in realm `%s' denied before stage2: %s",
                       r->user, conf->realm, r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -302,14 +302,14 @@ int authorize_stage1(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
 }
 
 
-int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcrypt_header_rec *resp) {
+int authorize_stage2(request_rec *r, auth_pake_config_rec *conf, auth_pake_header_rec *resp) {
     authn_status       return_code;
 
     return_code = get_user_pake_info(r, r->user, conf);
 
     if (return_code != AUTH_USER_FOUND) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user `%s' in realm `%s' denied in stage 2: %s",
+                      "auth_pake: user `%s' in realm `%s' denied in stage 2: %s",
                       r->user, conf->realm, r->uri);
         make_stage1_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -319,16 +319,16 @@ int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
     EC_POINT *X = EC_POINT_new(conf->pake->public.G);
     if (!EC_POINT_hex2point(conf->pake->public.G, resp->hdr.X, X, conf->bn_ctx)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: couldn't convert hex X to EC_POINT: X=%s, uri=%s",
+                      "auth_pake: couldn't convert hex X to EC_POINT: X=%s, uri=%s",
                       resp->hdr.X, r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
     pake_server_recv_X(conf->pake, X);
 
     /* compute expected respc */
-    if (!tcpcrypt_pake_compute_respc(conf->pake, tcpcrypt_get_sid())) {
+    if (!pake_compute_respc(conf->pake, tcpcrypt_get_sid())) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: couldn't compute expected respc: uri=%s",
+                      "auth_pake: couldn't compute expected respc: uri=%s",
                       r->uri);
         return HTTP_INTERNAL_SERVER_ERROR;
     }
@@ -337,7 +337,7 @@ int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
     char *client_respc = resp->hdr.respc;
     if (strcmp(exp_respc, client_respc)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_tcpcrypt: user %s: respc mismatch: expected '%s', got '%s'",
+                      "auth_pake: user %s: respc mismatch: expected '%s', got '%s'",
                       r->user, exp_respc, client_respc);
         make_stage2_auth_challenge(r, conf, resp);
         return HTTP_UNAUTHORIZED;
@@ -354,20 +354,20 @@ int authorize_stage2(request_rec *r, auth_tcpcrypt_config_rec *conf, auth_tcpcry
 
 static int add_auth_info(request_rec *r)
 {
-    struct tcpcrypt_http_header hdr;
-    auth_tcpcrypt_config_rec *conf =
-        (auth_tcpcrypt_config_rec *) ap_get_module_config(r->per_dir_config,
-                                                          &auth_tcpcrypt_module);
-    auth_tcpcrypt_header_rec *resp =
-        (auth_tcpcrypt_header_rec *) ap_get_module_config(r->request_config,
-                                                          &auth_tcpcrypt_module);
+    struct pake_http_header hdr;
+    auth_pake_config_rec *conf =
+        (auth_pake_config_rec *) ap_get_module_config(r->per_dir_config,
+                                                          &auth_pake_module);
+    auth_pake_header_rec *resp =
+        (auth_pake_header_rec *) ap_get_module_config(r->request_config,
+                                                          &auth_pake_module);
     char *ai, *resp_dig = NULL, *am = NULL;
 
     if (resp == NULL || !resp->needed_auth || conf == NULL || !resp->auth_ok) {
         return OK;
     }
 
-    tcpcrypt_pake_compute_resps(conf->pake, tcpcrypt_get_sid());
+    pake_compute_resps(conf->pake, tcpcrypt_get_sid());
     
     if (!conf->pake->shared.resps) {
         /* we failed to allocate a client struct */
@@ -376,11 +376,11 @@ static int add_auth_info(request_rec *r)
 
     /* assemble Authentication-Info header
      */
-    tcpcrypt_http_header_clear(&hdr);
-    hdr.type = TCPCRYPT_HTTP_AUTHENTICATION_INFO;
+    pake_http_header_clear(&hdr);
+    hdr.type = PAKE_HTTP_AUTHENTICATION_INFO;
     strcpy(hdr.resps, conf->pake->shared.resps);
-    ai = apr_palloc(r->pool, TCPCRYPT_HTTP_AUTHENTICATION_INFO_LENGTH);
-    tcpcrypt_http_header_stringify(ai, &hdr, 1);
+    ai = apr_palloc(r->pool, PAKE_HTTP_AUTHENTICATION_INFO_LENGTH);
+    pake_http_header_stringify(ai, &hdr, 1);
     if (ai && ai[0]) {
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);
     }
@@ -399,19 +399,19 @@ static int add_auth_info(request_rec *r)
  */
 
 void make_stage1_auth_challenge(request_rec *r,
-                         const auth_tcpcrypt_config_rec *conf,
-                         auth_tcpcrypt_header_rec *resp)
+                         const auth_pake_config_rec *conf,
+                         auth_pake_header_rec *resp)
 {
     char *auth_header_line = NULL, *link_header_line = NULL, 
          *am_status_line = NULL;
 
-    tcpcrypt_http_header_clear(&resp->hdr);
-    resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1;
+    pake_http_header_clear(&resp->hdr);
+    resp->hdr.type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE1;
     resp->hdr.realm = conf->realm;
     resp->hdr.username = NULL;
 
-    auth_header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
-    assert(tcpcrypt_http_header_stringify(auth_header_line, &resp->hdr, 1));
+    auth_header_line = apr_palloc(r->pool, PAKE_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
+    assert(pake_http_header_stringify(auth_header_line, &resp->hdr, 1));
 
     link_header_line = "<http://localhost:8080/amcd.json>; rel=\"acct-mgmt\"";
     am_status_line = "none";
@@ -422,15 +422,15 @@ void make_stage1_auth_challenge(request_rec *r,
 }
 
 void make_stage2_auth_challenge(request_rec *r,
-                         const auth_tcpcrypt_config_rec *conf,
-                         auth_tcpcrypt_header_rec *resp)
+                         const auth_pake_config_rec *conf,
+                         auth_pake_header_rec *resp)
 {
     char *Yhex = NULL, *header_line = NULL;
     const char *username = NULL;
     BN_CTX *ctx = NULL;
 
-    tcpcrypt_http_header_clear(&resp->hdr);
-    resp->hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
+    pake_http_header_clear(&resp->hdr);
+    resp->hdr.type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE2;
     resp->hdr.realm = conf->realm;
 
     assert(conf->pake->server_state.Y);
@@ -439,8 +439,8 @@ void make_stage2_auth_challenge(request_rec *r,
     strcpy(resp->hdr.Y, Yhex);
     OPENSSL_free(Yhex);
     
-    header_line = apr_palloc(r->pool, TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(&resp->hdr));
-    assert(tcpcrypt_http_header_stringify(header_line, &resp->hdr, 1));
+    header_line = apr_palloc(r->pool, PAKE_HTTP_WWW_AUTHENTICATE_STAGE2_LENGTH(&resp->hdr));
+    assert(pake_http_header_stringify(header_line, &resp->hdr, 1));
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", header_line);
 }
 
@@ -450,19 +450,19 @@ static void register_hooks(apr_pool_t *p)
 
     ap_hook_post_config(initialize_module, NULL, cfgPost, APR_HOOK_MIDDLE);
     ap_hook_post_read_request(make_header_rec, NULL, NULL, APR_HOOK_MIDDLE);
-    ap_hook_check_user_id(authenticate_tcpcrypt_user, NULL, NULL, APR_HOOK_MIDDLE);
+    ap_hook_check_user_id(authenticate_pake_user, NULL, NULL, APR_HOOK_MIDDLE);
 
     ap_hook_fixups(add_auth_info, NULL, NULL, APR_HOOK_MIDDLE);
 }
 
-module AP_MODULE_DECLARE_DATA auth_tcpcrypt_module =
+module AP_MODULE_DECLARE_DATA auth_pake_module =
 {
     STANDARD20_MODULE_STUFF,
-    create_auth_tcpcrypt_dir_config,   /* dir config creator */
+    create_auth_pake_dir_config,   /* dir config creator */
     NULL,                       /* dir merger --- default is to override */
     NULL,                       /* server config */
     NULL,                       /* merge server config */
-    auth_tcpcrypt_cmds,                /* command table */
+    auth_pake_cmds,                /* command table */
     register_hooks              /* register hooks */
 };
 

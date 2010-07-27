@@ -29,20 +29,20 @@ char *strdup(const char *str)
 
 }
 
-static int check_header(struct tcpcrypt_http_header *hdr) {
-    if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE2) {
+static int check_header(struct pake_http_header *hdr) {
+    if (hdr->type == PAKE_HTTP_AUTHORIZATION_STAGE2) {
         return hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) &&
             strlen(hdr->X) && strlen(hdr->Y) == 0 && strlen(hdr->respc) &&
             strlen(hdr->resps) == 0;
-    } else if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE1) {
+    } else if (hdr->type == PAKE_HTTP_AUTHORIZATION_STAGE1) {
         return hdr->username && strlen(hdr->username) && hdr->realm && strlen(hdr->realm) && 
             strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && 
             strlen(hdr->respc) == 0 && strlen(hdr->resps) == 0;
-    } else if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1) {
+    } else if (hdr->type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE1) {
         return !hdr->username && hdr->realm && strlen(hdr->realm) &&
             strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && strlen(hdr->respc) == 0 &&
             strlen(hdr->resps) == 0;
-    } else if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2) {
+    } else if (hdr->type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE2) {
         assert(!hdr->username);
         assert(hdr->realm); assert(strlen(hdr->realm));
         assert(strlen(hdr->X) == 0); assert(strlen(hdr->Y));
@@ -51,7 +51,7 @@ static int check_header(struct tcpcrypt_http_header *hdr) {
         return !hdr->username && hdr->realm && strlen(hdr->realm) &&
             strlen(hdr->X) == 0 && strlen(hdr->Y) && strlen(hdr->respc) == 0 &&
             strlen(hdr->resps) == 0;
-    } else if (hdr->type == TCPCRYPT_HTTP_AUTHENTICATION_INFO) {
+    } else if (hdr->type == PAKE_HTTP_AUTHENTICATION_INFO) {
         return !hdr->username && !hdr->realm && 
             strlen(hdr->X) == 0 && strlen(hdr->Y) == 0 && 
             strlen(hdr->respc) == 0 && strlen(hdr->resps);
@@ -60,16 +60,17 @@ static int check_header(struct tcpcrypt_http_header *hdr) {
     }
 }
 
-int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *header_line, enum tcpcrypt_http_auth_header_type_http type) {
-    tcpcrypt_http_header_clear(hdr);
+int pake_http_header_parse(struct pake_http_header *hdr, const char *header_line, enum pake_http_auth_header_type_http type) {
+    pake_http_header_clear(hdr);
     
     /* skip whitespaces */
     while(*header_line && isspace(*header_line))
         header_line++;
     
-    if (strncmp("Tcpcrypt", header_line, strlen("Tcpcrypt")) == 0) {
-        header_line += strlen("Tcpcrypt");
-        hdr->auth_name = "Tcpcrypt";
+    /* TODO(sqs): should be case insensitive */
+    if (strncmp("PAKE", header_line, strlen("PAKE")) == 0) {
+        header_line += strlen("PAKE");
+        hdr->auth_name = "PAKE";
 
         while(1) {
             char value[MAX_VALUE_LENGTH];
@@ -115,27 +116,27 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
         }
     } else {
         /* else not for us, get out */
-        fprintf(stderr, "no \"Tcpcrypt\" in header=\"%s\"\n", header_line);
+        fprintf(stderr, "no \"Pake\" in header=\"%s\"\n", header_line);
         goto err;
     }
 
     /* See what kind of Authorization: header this is. */
     if (type == HTTP_WWW_AUTHENTICATE) {
         if (hdr->Y[0] == '\0') {
-            hdr->type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1;
+            hdr->type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE1;
         } else {
-            hdr->type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
+            hdr->type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE2;
         }
     } else if (type == HTTP_AUTHORIZATION) {
         if (hdr->username && hdr->realm && hdr->X[0] == '\0' &&
             hdr->Y[0] == '\0' && hdr->respc[0] == '\0' && 
             hdr->resps[0] == '\0') {
-            hdr->type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE1;
+            hdr->type = PAKE_HTTP_AUTHORIZATION_STAGE1;
         } else {
-            hdr->type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE2;
+            hdr->type = PAKE_HTTP_AUTHORIZATION_STAGE2;
         }
     } else if (type == HTTP_AUTHENTICATION_INFO) {
-        hdr->type = TCPCRYPT_HTTP_AUTHENTICATION_INFO;
+        hdr->type = PAKE_HTTP_AUTHENTICATION_INFO;
     }
 
     if (!check_header(hdr)) goto err;
@@ -146,28 +147,28 @@ int tcpcrypt_http_header_parse(struct tcpcrypt_http_header *hdr, const char *hea
     return 0;
 }
 
-int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_header *hdr, int value_only) {
+int pake_http_header_stringify(char *header_line, struct pake_http_header *hdr, int value_only) {
     /* TODO: use snprintf */
     /* TODO: escape double quotes in quoted vals */
 
     if (!check_header(hdr)) goto err;
 
-    if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE1) {
-        sprintf(header_line, "%sTcpcrypt realm=\"%s\"", 
+    if (hdr->type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE1) {
+        sprintf(header_line, "%sPAKE realm=\"%s\"", 
                 value_only ? "" : "WWW-Authenticate: ", hdr->realm);
-    } else if (hdr->type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2) {
-        sprintf(header_line, "%sTcpcrypt realm=\"%s\" Y=\"%s\"", 
+    } else if (hdr->type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE2) {
+        sprintf(header_line, "%sPAKE realm=\"%s\" Y=\"%s\"", 
                 value_only ? "" : "WWW-Authenticate: ", hdr->realm, hdr->Y);
-    } else if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE2) {
-        sprintf(header_line, "%sTcpcrypt X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"",
+    } else if (hdr->type == PAKE_HTTP_AUTHORIZATION_STAGE2) {
+        sprintf(header_line, "%sPAKE X=\"%s\" username=\"%s\" respc=\"%s\" realm=\"%s\"",
                 value_only ? "" : "Authorization: ",
                 hdr->X, hdr->username, hdr->respc, hdr->realm);
-    } else if (hdr->type == TCPCRYPT_HTTP_AUTHORIZATION_STAGE1) {
-        sprintf(header_line, "%sTcpcrypt username=\"%s\" realm=\"%s\"", 
+    } else if (hdr->type == PAKE_HTTP_AUTHORIZATION_STAGE1) {
+        sprintf(header_line, "%sPAKE username=\"%s\" realm=\"%s\"", 
                 value_only ? "" : "Authorization: ",
                 hdr->username, hdr->realm);
-    } else if (hdr->type == TCPCRYPT_HTTP_AUTHENTICATION_INFO) {
-        sprintf(header_line, "%sTcpcrypt resps=\"%s\"", 
+    } else if (hdr->type == PAKE_HTTP_AUTHENTICATION_INFO) {
+        sprintf(header_line, "%sPAKE resps=\"%s\"", 
                 value_only ? "" : "Authentication-Info: ", hdr->resps);
     } else {
         goto err;
@@ -179,11 +180,11 @@ int tcpcrypt_http_header_stringify(char *header_line, struct tcpcrypt_http_heade
     return 0;
 }
 
-void tcpcrypt_http_header_clear(struct tcpcrypt_http_header *hdr) {
+void pake_http_header_clear(struct pake_http_header *hdr) {
     memset(hdr, 0, sizeof(*hdr));
 }
 
-void tcpcrypt_http_header_inspect(struct tcpcrypt_http_header *hdr) {
+void pake_http_header_inspect(struct pake_http_header *hdr) {
     printf("header hdr: %s realm=\"%s\"\n", 
            hdr->auth_name,
            hdr->realm /* , TODO more */);

@@ -12,10 +12,9 @@
 #include <curl/curl.h>
 #include <openssl/sha.h>
 #include <assert.h>
-#include "test_http_tcpcrypt_auth.h"
+#include "test_http_pake_auth.h"
 #include "tcpcrypt_session.h"
 #include "http_header.h"
-#include "http_tcpcrypt_auth.h"
 #include "test_acctmgmt.h"
 #include "pake.h"
 
@@ -23,7 +22,7 @@
 static int detailed = 0; // level of detail for tests
 
 
-void CLEAR_HEADER(struct tcpcrypt_http_header *hdr) {
+void CLEAR_HEADER(struct pake_http_header *hdr) {
     memset(hdr, 0, sizeof(*hdr));
 }
 
@@ -128,7 +127,7 @@ void do_http_request(struct http_request *req, struct http_response *res) {
     curl_easy_setopt(curl, CURLOPT_HTTPHEADER, NULL);
 }
 
-void get_hdr(char *k, enum tcpcrypt_http_auth_header_type_http type, struct http_request *req, struct http_response *res, struct tcpcrypt_http_header *hdr) {
+void get_hdr(char *k, enum pake_http_auth_header_type_http type, struct http_request *req, struct http_response *res, struct pake_http_header *hdr) {
     char *header_line = header_val(res, k);
 
     if (!header_line) {
@@ -136,7 +135,7 @@ void get_hdr(char *k, enum tcpcrypt_http_auth_header_type_http type, struct http
         return;
     }
 
-    if (!tcpcrypt_http_header_parse(hdr, header_line, type)) {
+    if (!pake_http_header_parse(hdr, header_line, type)) {
         fprintf(stderr, "couldn't parse header (type %d): '%s'\n", type, header_line);
         assert(0);
     }
@@ -150,23 +149,23 @@ void set_auth_hdr(CURL *curl_, char *auth_hdr) {
 }
 
 char *make_stage1_hdr(char *username, char *realm) {
-    struct tcpcrypt_http_header stage1_hdr;
+    struct pake_http_header stage1_hdr;
     static char hdr[1000];
 
     CLEAR_HEADER(&stage1_hdr);
-    stage1_hdr.type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE1;
+    stage1_hdr.type = PAKE_HTTP_AUTHORIZATION_STAGE1;
     stage1_hdr.username = username;
     stage1_hdr.realm = realm;
-    assert(tcpcrypt_http_header_stringify(hdr, &stage1_hdr, 0));
+    assert(pake_http_header_stringify(hdr, &stage1_hdr, 0));
 
     return hdr;
 }
 
-void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char *exp_resps, char *username, char *realm, char *password) {
-    struct tcpcrypt_http_header req_hdr;
+void make_auth_hdr(char *header_line, struct pake_http_header *res_hdr, char *exp_resps, char *username, char *realm, char *password) {
+    struct pake_http_header req_hdr;
     CLEAR_HEADER(&req_hdr);
 
-    req_hdr.type = TCPCRYPT_HTTP_AUTHORIZATION_STAGE2;
+    req_hdr.type = PAKE_HTTP_AUTHORIZATION_STAGE2;
     req_hdr.username = username;
     req_hdr.realm = realm;
 
@@ -180,21 +179,21 @@ void make_auth_hdr(char *header_line, struct tcpcrypt_http_header *res_hdr, char
     
     strcpy(req_hdr.X, pake_client_get_X_string(pc));
     
-    tcpcrypt_pake_compute_respc(pc, tcpcrypt_get_sid());
+    pake_compute_respc(pc, tcpcrypt_get_sid());
     strcpy(req_hdr.respc, (char *)pc->shared.respc);
 
-    assert(tcpcrypt_http_header_stringify(header_line, &req_hdr, 0)); 
+    assert(pake_http_header_stringify(header_line, &req_hdr, 0)); 
     if (detailed) printf("make auth hdr: '%s'\n", header_line);
 
     /* save expected resps to exp_resps */
-    tcpcrypt_pake_compute_resps(pc, tcpcrypt_get_sid());
+    pake_compute_resps(pc, tcpcrypt_get_sid());
     strcpy(exp_resps, (char *)pc->shared.resps);
 }
 
 void test_apache_www_authenticate_hdr(void) {
     struct http_request req;
     struct http_response res;
-    static struct tcpcrypt_http_header hdr;
+    static struct pake_http_header hdr;
 
     req.url = TEST_PROTECTED_URL;
     do_http_request(&req, &res);
@@ -210,9 +209,9 @@ void test_apache_www_authenticate_hdr(void) {
     if (detailed) fprintf(stderr, "%s\n", www_auth);
     assert(www_auth != NULL);
 
-    if (detailed) tcpcrypt_http_header_inspect(&hdr);
-    TEST_ASSERT(hdr.type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2);
-    TEST_ASSERT_STREQ("Tcpcrypt", hdr.auth_name);
+    if (detailed) pake_http_header_inspect(&hdr);
+    TEST_ASSERT(hdr.type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE2);
+    TEST_ASSERT_STREQ("PAKE", hdr.auth_name);
     TEST_ASSERT_STREQ("protected area", hdr.realm);
     assert(strlen(hdr.Y));
     TEST_ASSERT_STREQ("", hdr.X);
@@ -224,7 +223,7 @@ void test_apache_www_authenticate_hdr(void) {
 void test_apache_authorizes(void) {
     struct http_request req;
     struct http_response res;
-    static struct tcpcrypt_http_header hdr;
+    static struct pake_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));
@@ -233,7 +232,7 @@ void test_apache_authorizes(void) {
     TEST_ASSERT(res.status == 401);
     if (res.status != 401) return;
     
-    if (detailed) tcpcrypt_http_header_inspect(&hdr);
+    if (detailed) pake_http_header_inspect(&hdr);
 
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
     make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, TEST_REALM1, TEST_PW1);
@@ -260,7 +259,7 @@ void test_apache_authorizes(void) {
 void test_apache_rejects_bad_username(void) {
     struct http_request req;
     struct http_response res;
-    struct tcpcrypt_http_header hdr;
+    struct pake_http_header hdr;
     CLEAR_HEADER(&hdr);
     
     req.url = TEST_PROTECTED_URL;
@@ -285,7 +284,7 @@ void test_apache_rejects_bad_username(void) {
 void test_apache_rejects_bad_realm(void) {
     struct http_request req;
     struct http_response res;
-    struct tcpcrypt_http_header hdr;
+    struct pake_http_header hdr;
     CLEAR_HEADER(&hdr);
     
     req.url = TEST_PROTECTED_URL;
@@ -315,13 +314,13 @@ void test_gets_root_unauthenticated(void) {
 }
 
 void test_www_authenticate_hdr(void) {
-    struct tcpcrypt_http_header hdr;
+    struct pake_http_header hdr;
     
     /* parse test */
     CLEAR_HEADER(&hdr);
-    TEST_ASSERT(tcpcrypt_http_header_parse(&hdr, " Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"", HTTP_WWW_AUTHENTICATE));
-    TEST_ASSERT(hdr.type == TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2);
-    TEST_ASSERT_STREQ(hdr.auth_name, "Tcpcrypt");
+    TEST_ASSERT(pake_http_header_parse(&hdr, " PAKE realm=\"protected area\" Y=\"0123456789abcdef\"", HTTP_WWW_AUTHENTICATE));
+    TEST_ASSERT(hdr.type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE2);
+    TEST_ASSERT_STREQ(hdr.auth_name, "PAKE");
     TEST_ASSERT(!hdr.username);
     TEST_ASSERT_STREQ(hdr.realm, "protected area");
     TEST_ASSERT(strlen(hdr.X) == 0);
@@ -331,13 +330,13 @@ void test_www_authenticate_hdr(void) {
 
     /* stringify test */
     CLEAR_HEADER(&hdr);
-    hdr.type = TCPCRYPT_HTTP_WWW_AUTHENTICATE_STAGE2;
+    hdr.type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE2;
     hdr.realm = "protected area";
     strcpy(hdr.Y, "0123456789abcdef");
     char header_line[1000];
     memset((void *)&header_line, 0, sizeof(header_line));
-    TEST_ASSERT(tcpcrypt_http_header_stringify(header_line, &hdr, 0));
-    char *exp_header_line = "WWW-Authenticate: Tcpcrypt realm=\"protected area\" Y=\"0123456789abcdef\"";
+    TEST_ASSERT(pake_http_header_stringify(header_line, &hdr, 0));
+    char *exp_header_line = "WWW-Authenticate: PAKE realm=\"protected area\" Y=\"0123456789abcdef\"";
     TEST_ASSERT_STREQ(exp_header_line, header_line);
 }
 
@@ -345,7 +344,7 @@ void test_am_status_active() {
     /* Mostly copied from test_apache_authorizes -- TODO(sqs): reduce duplication */
     struct http_request req;
     struct http_response res;
-    static struct tcpcrypt_http_header hdr;
+    static struct pake_http_header hdr;
     
     req.url = TEST_PROTECTED_URL;
     set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));

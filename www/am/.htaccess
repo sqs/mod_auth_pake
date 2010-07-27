@@ -1,4 +1,4 @@
-AuthType "Tcpcrypt"
+AuthType "PAKE"
 AuthName "http://localhost:8080/amcd.json"
 Require valid-user
 PAKEFile /var/www/am/.pake

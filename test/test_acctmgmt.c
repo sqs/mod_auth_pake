@@ -4,7 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include <ctype.h>
-#include "test_http_tcpcrypt_auth.h"
+#include "test_http_pake_auth.h"
 
 static char *strdup(const char *str)
 {

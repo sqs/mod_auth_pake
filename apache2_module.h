@@ -1,5 +1,5 @@
-#ifndef MOD_AUTH_TCPCRYPT_APACHE2_MODULE_H
-#define MOD_AUTH_TCPCRYPT_APACHE2_MODULE_H
+#ifndef MOD_AUTH_PAKE_APACHE2_MODULE_H
+#define MOD_AUTH_PAKE_APACHE2_MODULE_H
 
 #include "apr_sha1.h"
 #include "apr_base64.h"
@@ -61,10 +61,10 @@ typedef struct hash_entry {
 
 /* struct to hold a parsed Authorization header */
 
-enum hdr_sts { NO_HEADER, NOT_TCPCRYPT_AUTH, INVALID, VALID_STAGE1, VALID_STAGE2 };
+enum hdr_sts { NO_HEADER, NOT_PAKE_AUTH, INVALID, VALID_STAGE1, VALID_STAGE2 };
 
-typedef struct auth_tcpcrypt_header_struct {
-    struct tcpcrypt_http_header hdr;
+typedef struct auth_pake_header_struct {
+    struct pake_http_header hdr;
     enum hdr_sts          auth_hdr_sts;
     const char           *method;
     const char           *uri;
@@ -73,6 +73,6 @@ typedef struct auth_tcpcrypt_header_struct {
     int                   needed_auth;
     int                   auth_ok;
     client_entry         *client;
-} auth_tcpcrypt_header_rec;
+} auth_pake_header_rec;
 
-#endif // MOD_AUTH_TCPCRYPT_APACHE2_MODULE_H
+#endif // MOD_AUTH_PAKE_APACHE2_MODULE_H

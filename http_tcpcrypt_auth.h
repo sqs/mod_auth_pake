@@ -1,6 +1,0 @@
-#ifndef HTTP_TCPCRYPT_AUTH_H
-#define HTTP_TCPCRYPT_AUTH_H
-
-
-
-#endif // HTTP_TCPCRYPT_AUTH_H
