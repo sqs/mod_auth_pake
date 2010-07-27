@@ -387,7 +387,7 @@ static int add_auth_info(request_rec *r)
 
     /* assemble X-Account-Management-Status header */
     /* TODO(sqs): escape semicolons in quoted vals */
-    am = apr_psprintf(r->pool, "active; name=\"%s\"; id=\"%s\"", 
+    am = apr_psprintf(r->pool, "active; name=\"%s\"; id=\"%s\";", 
                       r->user, r->user);
     apr_table_mergen(r->err_headers_out, "X-Account-Management-Status", am);
 

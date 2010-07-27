@@ -359,7 +359,7 @@ void test_am_status_active() {
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
-    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\"\r\n", 
+    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\";\r\n", 
                       header_val(&res, "X-Account-Management-Status:"));
     
     /* try getting another file with the same auth hdr */
@@ -368,7 +368,7 @@ void test_am_status_active() {
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
 
-    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\"\r\n", 
+    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\";\r\n", 
                       header_val(&res, "X-Account-Management-Status:"));
 }
 
