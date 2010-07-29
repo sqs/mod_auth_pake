@@ -320,6 +320,8 @@ int authorize_stage1(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
                           r->user, conf->realm, r->uri);
             r->user = NULL;
             set_user_pake_info(r, conf, "mod_auth_pake", NULL, NULL, 1);
+            /* TODO(sqs): this could still conflict if a user is named
+               mod_auth_pake */
         }
 
         make_stage2_auth_challenge(r, conf, resp);
