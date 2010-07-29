@@ -18,7 +18,7 @@ def check_auth(handle):
                    'active; name=%s; id=%s' % (user, user))
     else:
         web.header('X-Account-Management-Status', 'none')
-    handle()
+    return handle()
 app.add_processor(check_auth)
     
 if __name__ == "__main__":
