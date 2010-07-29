@@ -290,8 +290,12 @@ void test_apache_rejects_bad_realm(void) {
     do_http_request(&req, &res);
     get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 401);
+    assert(strcmp("protected area", hdr.realm) == 0);
+    assert(!strlen(hdr.Y));
+    assert(hdr.type == PAKE_HTTP_WWW_AUTHENTICATE_STAGE1);
 
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
+    strcpy(hdr.Y, "049FEB5BA1C3AE464266D7C131FA425576E4E7BD31FF17086D5C1FC69A3D619A37B278670E8C3141788342C357B746C4403221434283FE9DE306781AC331E73E09"); /* sample Y */
     make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, "badrealm", TEST_PW1);
     set_auth_hdr(curl, auth_hdr);
 

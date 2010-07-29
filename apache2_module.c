@@ -17,6 +17,7 @@ void make_stage1_auth_challenge(request_rec *r,
 void make_stage2_auth_challenge(request_rec *r,
                                 const auth_pake_config_rec *conf,
                                 auth_pake_header_rec *resp);
+static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *conf, const char *username, const char *pi_0_hex, const char *L_hex, int make_dummy);
 
 /* Get the request-uri (before any subrequests etc are initiated) and
  * initialize the request_config.
@@ -119,7 +120,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
     if (!pake_server_init(conf->pake, beta)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_pake: couldn't init pake: %s", r->uri);
-        return AUTH_USER_NOT_FOUND;
+        return AUTH_GENERAL_ERROR;
     }
 
     ap_configfile_t *f;
@@ -158,16 +159,51 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
         return AUTH_USER_NOT_FOUND;
     }
 
+    return set_user_pake_info(r, conf, username, file_pi_0, file_L, 0);
+}
+
+static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *conf, const char *username, const char *pi_0_hex, const char *L_hex, int make_dummy) {
+    BIGNUM *pi_0 = NULL, *order = NULL, *tmp = NULL;
+    EC_POINT *L = NULL;
+
     if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                                 "--------------- username = '%s'", username);
 
-    BIGNUM *pi_0 = BN_new();
-    assert(BN_hex2bn(&pi_0, file_pi_0));
+    pi_0 = BN_new();
+    L = EC_POINT_new(conf->pake->public.G);
+
     assert(conf->pake->public.G);
 
-    EC_POINT *L = EC_POINT_new(conf->pake->public.G);
-    EC_POINT_hex2point(conf->pake->public.G, file_L, L, conf->bn_ctx);
-    assert(L);
+    if (make_dummy) {
+        /* So that we don't leak user membership info, pretend this user exists
+           and make a fake pi_0 and L for the user so we can proceed to stage2
+           (it will never succeed, of course). */
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "making dummy pi_0 and L for username '%s'", username);
+        
+        /* make dummy pi_0 */
+        order = BN_new(); /* TODO(sqs): ret val check */
+        EC_GROUP_get_order(conf->pake->public.G, order, conf->bn_ctx);
+        do {
+            assert(BN_rand_range(pi_0, order));
+        } while (BN_is_zero(pi_0));
+        
+        /* make dummy L */
+        tmp = BN_new();
+        do {
+            assert(BN_rand_range(tmp, order));
+        } while (BN_is_zero(tmp));
+        assert(EC_POINT_mul(conf->pake->public.G, L, tmp, NULL, NULL, conf->bn_ctx));
+        
+        BN_free(tmp);
+        BN_free(order);
+    } else {
+        assert(BN_hex2bn(&pi_0, pi_0_hex));
+
+        EC_POINT_hex2point(conf->pake->public.G, L_hex, L, conf->bn_ctx);
+        assert(L);
+    }
+
         
     if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                                 "L = %s, pi_0 = %s", 
@@ -180,12 +216,11 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
                                      conf->realm, pi_0, L)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_pake: couldn't set server credentials: %s", r->uri);
-        return AUTH_USER_NOT_FOUND;
+        return AUTH_GENERAL_ERROR;
     }
 
     return AUTH_USER_FOUND;
 }
-
 
 
 /* Determine user ID, and check if the attributes are correct. */
@@ -253,7 +288,7 @@ static int authenticate_pake_user(request_rec *r)
     } else {
         /* No Authorize header. */
         if (conf->auth_optional) {
-            r->user = "mod_auth_pake";
+            r->user = "mod_auth_pake"; /* TODO(sqs): fix placeholder username */
             return OK;
         } else {
             make_stage1_auth_challenge(r, conf, resp);
@@ -276,32 +311,33 @@ int authorize_stage1(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
 
     return_code = get_user_pake_info(r, r->user, conf);
 
-    /* TODO: vulnerable to a timing attack to discover whether a username has
-       an account on this server? */
-    /* TODO: if user not found or denied, we MUST send back a dummy stage2
-       anyway so that an attacker can't discover if a user has an account --
-       the todo here is to craft that dummy stage2 in a way that also doesn't
-       give out any other information inadvertently */
-    if (return_code == AUTH_USER_NOT_FOUND) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_pake: user `%s' in realm `%s' not found: %s",
-                      r->user, conf->realm, r->uri);
-        make_stage1_auth_challenge(r, conf, resp);
-        return HTTP_UNAUTHORIZED;
-    } else if (return_code == AUTH_DENIED) {
-        /* authentication denied in the provider before attempting a match */
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_pake: user `%s' in realm `%s' denied before stage2: %s",
-                      r->user, conf->realm, r->uri);
-        make_stage1_auth_challenge(r, conf, resp);
-        return HTTP_UNAUTHORIZED;
-    } else if (return_code == AUTH_USER_FOUND) {
+    if (return_code == AUTH_USER_FOUND || return_code == AUTH_USER_NOT_FOUND) {
+        /* Send a dummy stage2 back if the user isn't found, so that we don't
+           leak membership information. */
+        if (return_code == AUTH_USER_NOT_FOUND) {
+            ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                          "auth_pake: user `%s' in realm `%s' not found: %s",
+                          r->user, conf->realm, r->uri);
+            r->user = "mod_auth_pake"; /* TODO(sqs): eliminate dummy username? */
+            set_user_pake_info(r, conf, r->user, NULL, NULL, 1);
+        }
+
         make_stage2_auth_challenge(r, conf, resp);
+
         if (conf->auth_optional) {
             return HTTP_NO_CONTENT;
         } else {
             return HTTP_UNAUTHORIZED;
         }
+    } else if (return_code == AUTH_DENIED) {
+        /* authentication denied in the provider before attempting a match */
+        /* TODO(sqs): When does this occur? Make sure this doesn't leak
+           membership information. */
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
+                      "auth_pake: user `%s' in realm `%s' denied before stage2: %s",
+                      r->user, conf->realm, r->uri);
+        make_stage1_auth_challenge(r, conf, resp);
+        return HTTP_UNAUTHORIZED;
     } else {
         /* AUTH_GENERAL_ERROR (or worse)
          * We'll assume that the module has already said what its error
@@ -424,8 +460,6 @@ void make_stage2_auth_challenge(request_rec *r,
                          auth_pake_header_rec *resp)
 {
     char *Yhex = NULL, *header_line = NULL;
-    const char *username = NULL;
-    BN_CTX *ctx = NULL;
 
     pake_http_header_clear(&resp->hdr);
     resp->hdr.type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE2;
@@ -433,7 +467,7 @@ void make_stage2_auth_challenge(request_rec *r,
 
     assert(conf->pake->server_state.Y);
     Yhex = EC_POINT_point2hex(conf->pake->public.G, conf->pake->server_state.Y,
-                              POINT_CONVERSION_UNCOMPRESSED, ctx);
+                              POINT_CONVERSION_UNCOMPRESSED, conf->bn_ctx);
     strcpy(resp->hdr.Y, Yhex);
     OPENSSL_free(Yhex);
     
