@@ -318,8 +318,8 @@ int authorize_stage1(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
             ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                           "auth_pake: user `%s' in realm `%s' not found: %s",
                           r->user, conf->realm, r->uri);
-            r->user = "mod_auth_pake"; /* TODO(sqs): eliminate dummy username? */
-            set_user_pake_info(r, conf, r->user, NULL, NULL, 1);
+            r->user = NULL;
+            set_user_pake_info(r, conf, "mod_auth_pake", NULL, NULL, 1);
         }
 
         make_stage2_auth_challenge(r, conf, resp);
