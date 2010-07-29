@@ -204,14 +204,6 @@ static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *con
         assert(L);
     }
 
-        
-    if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
-                                "L = %s, pi_0 = %s", 
-                                EC_POINT_point2hex(conf->pake->public.G, L,
-                                                   POINT_CONVERSION_UNCOMPRESSED,
-                                                   conf->bn_ctx),
-                                BN_bn2hex(pi_0));
-
     if (!pake_server_set_credentials(conf->pake, username, 
                                      conf->realm, pi_0, L)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
@@ -430,6 +422,7 @@ static int add_auth_info(request_rec *r)
     ai = apr_palloc(r->pool, PAKE_HTTP_AUTHENTICATION_INFO_LENGTH);
     pake_http_header_stringify(ai, &hdr, 1);
     if (ai && ai[0]) {
+        APLOG("Authentication-Info: %s", ai);
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);
     }
 
