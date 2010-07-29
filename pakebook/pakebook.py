@@ -42,6 +42,7 @@ class signup:
         f = self.form()
         if not f.validates():
             return self.GET(f)
+        # TODO(sqs): check username uniqueness
         # TODO(sqs): obviously not safe if two processes try to access at same time
         userfile = open(USER_FILE_PATH, 'ab')
         userfile.write("%s %s %s\n" % (f.d.username, f.d.pi_0, f.d.L))
