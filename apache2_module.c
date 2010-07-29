@@ -385,12 +385,6 @@ static int add_auth_info(request_rec *r)
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);
     }
 
-    /* assemble X-Account-Management-Status header */
-    /* TODO(sqs): escape semicolons in quoted vals */
-    am = apr_psprintf(r->pool, "active; name=\"%s\"; id=\"%s\";", 
-                      r->user, r->user);
-    apr_table_mergen(r->err_headers_out, "X-Account-Management-Status", am);
-
     return OK;
 }
 
@@ -402,8 +396,7 @@ void make_stage1_auth_challenge(request_rec *r,
                          const auth_pake_config_rec *conf,
                          auth_pake_header_rec *resp)
 {
-    char *auth_header_line = NULL, *link_header_line = NULL, 
-         *am_status_line = NULL;
+    char *auth_header_line = NULL;
 
     pake_http_header_clear(&resp->hdr);
     resp->hdr.type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE1;
@@ -413,12 +406,7 @@ void make_stage1_auth_challenge(request_rec *r,
     auth_header_line = apr_palloc(r->pool, PAKE_HTTP_WWW_AUTHENTICATE_STAGE1_LENGTH(&resp->hdr));
     assert(pake_http_header_stringify(auth_header_line, &resp->hdr, 1));
 
-    link_header_line = "<http://localhost:8080/amcd.json>; rel=\"acct-mgmt\"";
-    am_status_line = "none";
-
     apr_table_mergen(r->err_headers_out, "WWW-Authenticate", auth_header_line);    
-    apr_table_mergen(r->err_headers_out, "Link", link_header_line);
-    apr_table_mergen(r->err_headers_out, "X-Account-Management-Status", am_status_line);
 }
 
 void make_stage2_auth_challenge(request_rec *r,
