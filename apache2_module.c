@@ -167,7 +167,7 @@ static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *con
     EC_POINT *L = NULL;
 
     if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                "--------------- username = '%s'", username);
+                                "--- username = '%s'", username);
 
     pi_0 = BN_new();
     L = EC_POINT_new(conf->pake->public.G);
