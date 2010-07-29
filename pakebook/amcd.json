@@ -4,6 +4,9 @@
       "connect": {
         "path": "/login"
       },
+      "disconnect": {
+        "path": "/login"
+      },
       "sessionstatus": {
         "method": "GET",
         "path": "/login"
