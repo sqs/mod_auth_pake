@@ -467,9 +467,7 @@ void make_stage2_auth_challenge(request_rec *r,
     resp->hdr.type = PAKE_HTTP_WWW_AUTHENTICATE_STAGE2;
     resp->hdr.realm = conf->realm;
 
-    assert(conf->pake->server_state.Y);
-    Yhex = EC_POINT_point2hex(conf->pake->public.G, conf->pake->server_state.Y,
-                              POINT_CONVERSION_UNCOMPRESSED, conf->bn_ctx);
+    Yhex = pake_server_get_Y_string(conf->pake);
     strcpy(resp->hdr.Y, Yhex);
     OPENSSL_free(Yhex);
     
