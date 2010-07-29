@@ -12,8 +12,11 @@
 #define TEST_OPTIONAL_AUTH_URL TEST_ROOT_URL "optional/"
 #define TEST_OPTIONAL_AUTH_URL2 TEST_ROOT_URL "optional/xyz.txt"
 #define TEST_USER1 "jsmith"
+#define TEST_USER2 "alice"
 #define TEST_REALM1 "protected area"
+#define TEST_OPTIONAL_AUTH_REALM "http://localhost:8080/amcd.json"
 #define TEST_PW1 "jsmith"
+#define TEST_PW2 "pw"
 
 struct http_request {
     char *url;

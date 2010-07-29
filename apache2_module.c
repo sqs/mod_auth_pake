@@ -250,9 +250,15 @@ static int authenticate_pake_user(request_rec *r)
         return authorize_stage1(r, conf, resp);
     } else if (resp->auth_hdr_sts == VALID_STAGE2) {
          return authorize_stage2(r, conf, resp);
-    } else { /* NO_HEADER */
-        make_stage1_auth_challenge(r, conf, resp);
-        return HTTP_UNAUTHORIZED;
+    } else {
+        /* No Authorize header. */
+        if (conf->auth_optional) {
+            r->user = "mod_auth_pake";
+            return OK;
+        } else {
+            make_stage1_auth_challenge(r, conf, resp);
+            return HTTP_UNAUTHORIZED;
+        }
     }
 }
 
@@ -291,7 +297,11 @@ int authorize_stage1(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
         return HTTP_UNAUTHORIZED;
     } else if (return_code == AUTH_USER_FOUND) {
         make_stage2_auth_challenge(r, conf, resp);
-        return HTTP_UNAUTHORIZED;
+        if (conf->auth_optional) {
+            return HTTP_NO_CONTENT;
+        } else {
+            return HTTP_UNAUTHORIZED;
+        }
     } else {
         /* AUTH_GENERAL_ERROR (or worse)
          * We'll assume that the module has already said what its error

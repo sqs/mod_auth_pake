@@ -352,19 +352,19 @@ void test_auth_optional_is_optional() {
     if (res.status != 200) return;
 
     req.url = TEST_OPTIONAL_AUTH_URL;
-    set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));
+    set_auth_hdr(curl, make_stage1_hdr(TEST_USER2, TEST_OPTIONAL_AUTH_REALM));
     do_http_request(&req, &res);
     get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
     TEST_ASSERT(res.status == 204);
     if (res.status != 204) return;
     
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
-    make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, TEST_REALM1, TEST_PW1);
+    make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER2, TEST_OPTIONAL_AUTH_REALM, TEST_PW2);
     set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
-    assert(strncmp("<h1>Protected</h1>", res.body.data, 16) == 0);
+    assert(strncmp("<h1>Optional</h1>", res.body.data, 17) == 0);
     
     /* check resps */
     CLEAR_HEADER(&hdr);
