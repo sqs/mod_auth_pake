@@ -420,7 +420,7 @@ static int add_auth_info(request_rec *r)
     hdr.type = PAKE_HTTP_AUTHENTICATION_INFO;
     strcpy(hdr.resps, conf->pake->shared.resps);
     ai = apr_palloc(r->pool, PAKE_HTTP_AUTHENTICATION_INFO_LENGTH);
-    pake_http_header_stringify(ai, &hdr, 1);
+    assert(pake_http_header_stringify(ai, &hdr, 1));
     if (ai && ai[0]) {
         APLOG("Authentication-Info: %s", ai);
         apr_table_mergen(r->headers_out, "Authentication-Info", ai);
