@@ -2,11 +2,11 @@
   "methods": {
     "http-pake-auth": {
       "connect": {
-        "path": "/"
+        "path": "/login"
       },
       "sessionstatus": {
         "method": "GET",
-        "path": "/"
+        "path": "/login"
       }
     }
   }

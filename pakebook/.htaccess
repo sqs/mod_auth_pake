@@ -4,6 +4,7 @@ AddHandler cgi-script .py
 <IfModule mod_rewrite.c>      
   RewriteEngine on
   RewriteBase /
+  RewriteCond %{REQUEST_URI} !^/login$
   RewriteCond %{REQUEST_URI} !^/\.well-known/
   RewriteCond %{REQUEST_URI} !^/amcd\.json$
   RewriteCond %{REQUEST_URI} !^/icons
@@ -14,11 +15,11 @@ AddHandler cgi-script .py
 
 ForceType text/html
 
-<FilesMatch login>
-    AuthType "PAKE"
-    AuthName "http://localhost:3000/amcd.json"
-    Require valid-user
-    PAKEFile /home/sqs/src/mod_auth_tcpcrypt/pakebook/.htpake
-    AuthOptional On
-    # username 'alice', password 'pw'
-</FilesMatch>
+AuthType "PAKE"
+AuthName "http://localhost:3000/amcd.json"
+Require valid-user
+PAKEFile /home/sqs/src/mod_auth_tcpcrypt/pakebook/.htpake
+AuthOptional On
+# username 'alice', password 'pw'
+
+

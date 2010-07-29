@@ -21,7 +21,7 @@ class signup:
         pass
 
 def check_auth(handle):
-    if 'REMOTE_USER' in web.ctx.env:
+    if web.ctx.env.get('REMOTE_USER'):
         user = web.ctx.env['REMOTE_USER']
         web.header('X-Account-Management-Status',
                    'active; name=%s; id=%s' % (user, user))
