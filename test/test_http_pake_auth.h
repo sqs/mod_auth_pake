@@ -9,6 +9,8 @@
 #define TEST_ROOT_URL "http://" TEST_HOST ":" TEST_PORT "/"
 #define TEST_PROTECTED_URL TEST_ROOT_URL TEST_PROTECTED_PATH
 #define TEST_PROTECTED_URL2 TEST_ROOT_URL TEST_PROTECTED_PATH2
+#define TEST_OPTIONAL_AUTH_URL TEST_ROOT_URL "optional/"
+#define TEST_OPTIONAL_AUTH_URL2 TEST_ROOT_URL "optional/xyz.txt"
 #define TEST_USER1 "jsmith"
 #define TEST_REALM1 "protected area"
 #define TEST_PW1 "jsmith"

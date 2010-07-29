@@ -1,4 +1,5 @@
 AuthType "PAKE"
 AuthName "http://localhost:8080/amcd.json"
+AuthOptional yes
+PAKEFile /var/www/optional/.pake
 Require valid-user
-PAKEFile /var/www/am/.pake

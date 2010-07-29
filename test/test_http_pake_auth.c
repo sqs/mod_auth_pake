@@ -15,7 +15,6 @@
 #include "test_http_pake_auth.h"
 #include "tcpcrypt_session.h"
 #include "http_header.h"
-#include "test_acctmgmt.h"
 #include "pake.h"
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
@@ -240,7 +239,7 @@ void test_apache_authorizes(void) {
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
-    TEST_ASSERT_STREQ("<h1>Protected</h1>\n", res.body.data);
+    assert(strncmp("<h1>Protected</h1>", res.body.data, 16) == 0);
     
     /* check resps */
     CLEAR_HEADER(&hdr);
@@ -253,7 +252,6 @@ void test_apache_authorizes(void) {
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
     TEST_ASSERT_STREQ("This file is also protected!\n", res.body.data);
-
 }
 
 void test_apache_rejects_bad_username(void) {
@@ -340,18 +338,25 @@ void test_www_authenticate_hdr(void) {
     TEST_ASSERT_STREQ(exp_header_line, header_line);
 }
 
-void test_am_status_active() {
+void test_auth_optional_is_optional() {
     /* Mostly copied from test_apache_authorizes -- TODO(sqs): reduce duplication */
     struct http_request req;
     struct http_response res;
     static struct pake_http_header hdr;
     
-    req.url = TEST_PROTECTED_URL;
+    req.url = TEST_OPTIONAL_AUTH_URL;
+    do_http_request(&req, &res);
+    // TODO(sqs): should the server return a WWW-Authenticate hdr here?
+    // might be better than AMCD.
+    TEST_ASSERT(res.status == 200);
+    if (res.status != 200) return;
+
+    req.url = TEST_OPTIONAL_AUTH_URL;
     set_auth_hdr(curl, make_stage1_hdr(TEST_USER1, TEST_REALM1));
     do_http_request(&req, &res);
     get_hdr("WWW-Authenticate:", HTTP_WWW_AUTHENTICATE, &req, &res, &hdr);
-    TEST_ASSERT(res.status == 401);
-    if (res.status != 401) return;
+    TEST_ASSERT(res.status == 204);
+    if (res.status != 204) return;
     
     char auth_hdr[1000], exp_resps[RESP_LENGTH];
     make_auth_hdr(auth_hdr, &hdr, exp_resps, TEST_USER1, TEST_REALM1, TEST_PW1);
@@ -359,17 +364,18 @@ void test_am_status_active() {
 
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
-    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\";\r\n", 
-                      header_val(&res, "X-Account-Management-Status:"));
+    assert(strncmp("<h1>Protected</h1>", res.body.data, 16) == 0);
+    
+    /* check resps */
+    CLEAR_HEADER(&hdr);
+    get_hdr("Authentication-Info:", HTTP_AUTHENTICATION_INFO, &req, &res, &hdr);
+    TEST_ASSERT_STREQ(exp_resps, hdr.resps);
     
     /* try getting another file with the same auth hdr */
-    req.url = TEST_PROTECTED_URL2;
+    req.url = TEST_OPTIONAL_AUTH_URL2;
     set_auth_hdr(curl, auth_hdr);
     do_http_request(&req, &res);
     TEST_ASSERT(res.status == 200);
-
-    TEST_ASSERT_STREQ(" active; name=\"jsmith\"; id=\"jsmith\";\r\n", 
-                      header_val(&res, "X-Account-Management-Status:"));
 }
 
 static struct test _tests[] = {
@@ -377,12 +383,9 @@ static struct test _tests[] = {
     { test_gets_root_unauthenticated, "test_gets_root_unauthenticated"},
     { test_apache_www_authenticate_hdr, "test_apache_www_authenticate_hdr"},
     { test_www_authenticate_hdr, "test_www_authenticate_hdr" },
+    { test_auth_optional_is_optional, "test_auth_optional_is_optional" },
     { test_apache_rejects_bad_username, "test_apache_rejects_bad_username" },
     { test_apache_rejects_bad_realm, "test_apache_rejects_bad_realm" },
-    { test_advertises_acctmgmt_realm, "test_advertises_acctmgmt_realm" },
-    { test_parses_acctmgmt_link, "test_parses_acctmgmt_link" },
-    { test_am_status_inactive, "test_am_status_inactive" },
-    { test_am_status_active, "test_am_status_active" },
 };
 
 /* Run tests matching spec, or all tests if spec is NULL. */
