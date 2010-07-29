@@ -1,0 +1,13 @@
+{
+  "methods": {
+    "http-pake-auth": {
+      "connect": {
+        "path": "/"
+      },
+      "sessionstatus": {
+        "method": "GET",
+        "path": "/"
+      }
+    }
+  }
+}
