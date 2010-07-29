@@ -288,7 +288,7 @@ static int authenticate_pake_user(request_rec *r)
     } else {
         /* No Authorize header. */
         if (conf->auth_optional) {
-            r->user = "mod_auth_pake"; /* TODO(sqs): fix placeholder username */
+            r->user = "";
             return OK;
         } else {
             make_stage1_auth_challenge(r, conf, resp);
