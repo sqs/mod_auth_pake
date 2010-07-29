@@ -401,7 +401,7 @@ static int add_auth_info(request_rec *r)
     auth_pake_header_rec *resp =
         (auth_pake_header_rec *) ap_get_module_config(r->request_config,
                                                           &auth_pake_module);
-    char *ai, *resp_dig = NULL, *am = NULL;
+    char *ai, *resp_dig = NULL;
 
     if (resp == NULL || !resp->needed_auth || conf == NULL || !resp->auth_ok) {
         return OK;
