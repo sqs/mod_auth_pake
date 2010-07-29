@@ -5,6 +5,7 @@ urls = (
     '/', 'index',
     '/signup', 'signup',
     '/login', 'login',
+    '/~([a-z]+)', 'user',
 )
 
 app = web.application(urls, globals())
@@ -12,13 +13,28 @@ app = web.application(urls, globals())
 class index:
     def GET(self):
         if web.ctx.user:
-            return "Hello, %s." % web.ctx.user
+            return "<h1>Home</h1>Hello, <a href='/~%s'>%s</a>." % \
+                   (web.ctx.user, web.ctx.user)
         else:
-            return "Not logged in."
+            return "<h1>Home</h1><p>You're not logged in.</p>"
 
 class signup:
     def POST(self):
         pass
+
+class user:
+    def GET(self, username):
+        if username == web.ctx.user:
+            return "<h1>Your profile</h1>" \
+                   "<p>Your name: %s<br>Your email: %s@scs.stanford.edu</p>" % \
+                   (username, username)
+        elif web.ctx.user:
+            return "<h1>%s's private profile</h1>" \
+                   "<p>Name: %s<br>Email: %s@scs.stanford.edu</p>" % \
+                   (username, username, username)
+        else:
+            return "<h1>%s's public profile</h1><p>Name: %s</p>" % \
+                   (username, username)
 
 def check_auth(handle):
     if web.ctx.env.get('REMOTE_USER'):
@@ -29,7 +45,16 @@ def check_auth(handle):
     else:
         web.header('X-Account-Management-Status', 'none')
         web.ctx.user = None
-    return handle()
+
+    nav = "<p><a href='/'>Home</a> - Users: %s</p>" % \
+        ' '.join(["<a href='/~%s'>%s</a>" % (u,u) for u in [p[0] for p in map(str.split, open('.htpake').readlines())]])
+    if web.ctx.user:
+        footer = "<hr><p>Logged in as <a href='/~%s'>%s</a>.</p>%s" % \
+            (web.ctx.user, web.ctx.user, nav)
+    else:
+        footer = "<hr><p>Not logged in.</p>%s" % nav
+        
+    return handle() + footer
 app.add_processor(check_auth)
     
 if __name__ == "__main__":
