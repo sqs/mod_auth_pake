@@ -18,7 +18,7 @@ ForceType text/html
 AuthType "PAKE"
 AuthName "http://localhost:3000/amcd.json"
 Require valid-user
-PAKEFile /home/sqs/src/mod_auth_tcpcrypt/pakebook/.htpake
+PAKEFile /home/sqs/src/mod_auth_pake/pakebook/.htpake
 AuthOptional On
 # username 'alice', password 'pw'
 # username 'bob', password '123'
