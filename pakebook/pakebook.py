@@ -83,6 +83,9 @@ def check_auth(handle):
         web.header('X-Account-Management-Status', 'none')
         web.ctx.user = None
 
+    web.ctx.tcpcrypt_sessid = web.ctx.env.get('TCP_CRYPT_SESSID')
+        
+
     nav = "<p><a href='/'>Home</a> - <a href='/signup'>Sign up</a> - " \
           "Users: %s</p>" % \
           ' '.join(["<a href='/~%s'>%s</a>" % (u,u) for u in web.ctx.all_users])
@@ -91,6 +94,9 @@ def check_auth(handle):
             (web.ctx.user, web.ctx.user, nav)
     else:
         footer = "<hr><p>Not logged in.</p>%s" % nav
+    if web.ctx.tcpcrypt_sessid:
+        footer += "<p>Tcpcrypt session ID: %s</p>" % \
+            (web.ctx.tcpcrypt_sessid or "<none>")
         
     return handle() + footer
 app.add_processor(check_auth)
