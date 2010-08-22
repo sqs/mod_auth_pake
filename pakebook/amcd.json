@@ -1,14 +1,15 @@
 {
-  "methods": {
+  "version": 1,
+  "sessionstatus": {
+    "method": "GET",
+    "path": "/login"
+  },
+  "auth-methods": {
     "http-pake": {
       "connect": {
         "path": "/login"
       },
       "disconnect": {
-        "path": "/login"
-      },
-      "sessionstatus": {
-        "method": "GET",
         "path": "/login"
       }
     }

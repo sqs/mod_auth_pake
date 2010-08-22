@@ -1,13 +1,14 @@
 {
-  "methods": {
-    "http-pake-auth": {
+  "version": 1,
+  "sessionstatus": {
+    "method": "GET",
+    "path": "/optional/"
+  },
+  "auth-methods": {
+    "http-pake": {
       "connect": {
         "path": "/optional/",
         "realm": "protected area"
-      },
-      "sessionstatus": {
-        "method": "GET",
-        "path": "/optional/"
       }
     }
   }

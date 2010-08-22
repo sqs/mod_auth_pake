@@ -77,7 +77,8 @@ def check_auth(handle):
     if web.ctx.env.get('REMOTE_USER'):
         user = web.ctx.env['REMOTE_USER']
         web.header('X-Account-Management-Status',
-                   'active; name=%s; id=%s' % (user, user))
+                   'active; name=%s; id=%s; authmethod="http-pake"' % \
+                       (user, user))
         web.ctx.user = user
     else:
         web.header('X-Account-Management-Status', 'none')
