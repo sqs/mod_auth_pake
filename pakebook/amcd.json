@@ -1,6 +1,6 @@
 {
   "methods": {
-    "http-pake-auth": {
+    "http-pake": {
       "connect": {
         "path": "/login"
       },
