@@ -4,17 +4,22 @@
 #include <errno.h>
 #include <strings.h>
 #include <string.h>
-/* #include <netdb.h> */
-/* #include <sys/types.h> */
-/* #include <netinet/in.h> */
-/* #include <sys/socket.h> */
-/* #include <arpa/inet.h> */
+#include <netdb.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <arpa/inet.h>
 #include <curl/curl.h>
 #include <openssl/sha.h>
 #include <assert.h>
 #include "test_http_pake_auth.h"
 #include "http_header.h"
 #include <pake/pake.h>
+
+#include "lib/tcpcrypt.h"
+#include "tcpcrypt/tcpcrypt.h"
+#include "tcpcrypt/tcpcrypt_ctl.h"
+
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests
@@ -46,6 +51,48 @@ struct test {
     char	*t_desc;
 };
 
+
+static
+char *tc_sessid(void)
+{
+    unsigned char buf[512];
+    unsigned char *b = (unsigned char *)buf;
+    char *sessid, *s;
+    long fd;
+    unsigned int len = sizeof(buf);
+
+    /* get fd */
+    if (curl_easy_getinfo(curl, CURLINFO_LASTSOCKET, &fd)) {
+        printf("curl_easy_getinfo of CURL_EASY_GETINFO failed\n");
+    }
+    printf("saw last socket fd = %ld\n", fd);
+
+    if (tcpcrypt_getsockopt(fd, IPPROTO_TCP, TCP_CRYPT_SESSID,
+                            buf, &len) == -1) {
+        printf("tcpcrypt_getsockopt error for TCP_CRYPT_SESSID: "
+               "%s (%d) [fd=%ld]\n",
+               strerror(errno), errno, fd);
+        return NULL;
+    }
+
+    if (len == 0) {
+        printf("tcpcrypt_getsockopt error: len == 0 for fd %ld\n", fd);
+        return NULL;
+    }
+
+    sessid = malloc(len*2 + 1);
+    sessid[0] = '\0';
+    assert(sessid);
+    s = sessid;
+    while (len--) {
+        sprintf(s, "%.2X", *b++);
+        s += 2;
+    }
+
+    printf("tcpcrypt_getsockopt TCP_CRYPT_SESSID = %s\n", sessid);
+
+    return sessid;
+}
 
 /*************************************************
  * HTTP stuff
@@ -177,15 +224,17 @@ void make_auth_hdr(char *header_line, struct pake_http_header *res_hdr, char *ex
     
     strcpy(req_hdr.X, pake_client_get_X_string(pc));
     
-    pake_compute_respc(pc, 1234); /* TODO: unhardcode me */
+    pake_compute_respc(pc, tc_sessid());
     strcpy(req_hdr.respc, (char *)pc->shared.respc);
 
     assert(pake_http_header_stringify(header_line, &req_hdr, 0)); 
     if (detailed) printf("make auth hdr: '%s'\n", header_line);
 
     /* save expected resps to exp_resps */
-    pake_compute_resps(pc, 1234); /* TODO: unhardcode me */
+    pake_compute_resps(pc, tc_sessid());
     strcpy(exp_resps, (char *)pc->shared.resps);
+
+    if (detailed) debug_pake_info(pc);
 }
 
 void test_apache_www_authenticate_hdr(void) {
@@ -237,7 +286,7 @@ void test_apache_authorizes(void) {
     set_auth_hdr(curl, auth_hdr);
 
     do_http_request(&req, &res);
-    TEST_ASSERT(res.status == 200);
+    assert(res.status == 200);
     assert(strncmp("<h1>Protected</h1>", res.body.data, 16) == 0);
     
     /* check resps */

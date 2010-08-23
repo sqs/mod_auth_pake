@@ -23,6 +23,7 @@ static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *con
  */
 static int make_header_rec(request_rec *r)
 {
+    const char *sessid;
     auth_pake_header_rec *resp;
 
     if (!ap_is_initial_req(r)) {
@@ -36,6 +37,10 @@ static int make_header_rec(request_rec *r)
     resp->auth_ok = 0;
     resp->method = r->method;
     ap_set_module_config(r->request_config, &auth_pake_module, resp);
+
+    sessid = apr_table_get(r->connection->notes, "TCP_CRYPT_SESSID");
+    if (sessid)
+        strncpy(resp->sessid, sessid, MAX_SESSID);
 
     parse_authorization_header(r, resp);
 
@@ -84,19 +89,16 @@ int parse_authorization_header(request_rec *r, auth_pake_header_rec *resp)
  * Authorization header verification code
  */
 
-static BIGNUM *make_beta(unsigned char *secret) {
+static BIGNUM *make_beta(unsigned char *secret, char *sessid) {
     BIGNUM *beta;
     SHA512_CTX sha;
-    long sessid;
     unsigned char md[SHA512_DIGEST_LENGTH];
 
     beta = BN_new();
     assert(beta);
 
-    sessid = 1234; /* TODO: unhardcode me */
-
     assert(SHA512_Init(&sha));
-    assert(SHA512_Update(&sha, &sessid, sizeof(sessid)));
+    assert(SHA512_Update(&sha, sessid, strnlen(sessid, MAX_SESSID)));
     assert(SHA512_Update(&sha, secret, SECRET_LEN));
     assert(SHA512_Final(md, &sha));
 
@@ -108,12 +110,16 @@ static BIGNUM *make_beta(unsigned char *secret) {
 static authn_status get_user_pake_info(request_rec *r, const char *username,
                                        auth_pake_config_rec *conf)
 {   
+    auth_pake_header_rec *resp;
     BIGNUM *beta;
     conf->pake = pake_server_new();
     /* TODO: error checking and free if error */
 
     /* make beta = H(sid, auth_pake_secret) */
-    beta = make_beta(auth_pake_secret);
+    /* TODO: make random auth_pake_secret regenerate */
+    resp = (auth_pake_header_rec *) ap_get_module_config(r->request_config,
+                                                         &auth_pake_module);
+    beta = make_beta(auth_pake_secret, resp->sessid);
     assert(beta);
 
     if (!pake_server_init(conf->pake, beta)) {
@@ -245,7 +251,8 @@ static int authenticate_pake_user(request_rec *r)
     }
     while (mainreq->prev != NULL) {
         mainreq = mainreq->prev;
-    }
+    } /* TODO: are these 2 while loops necessary? */
+    assert(r == mainreq); /* if this assert fails, then the while loops are necessary */
     resp = (auth_pake_header_rec *) ap_get_module_config(mainreq->request_config,
                                                       &auth_pake_module);
     resp->needed_auth = 1;
@@ -365,7 +372,7 @@ int authorize_stage2(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
     pake_server_recv_X(conf->pake, X);
 
     /* compute expected respc */
-    if (!pake_compute_respc(conf->pake, 1234)) { /* TODO: unhardcode me */
+    if (!pake_compute_respc(conf->pake, resp->sessid)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_pake: couldn't compute expected respc: uri=%s",
                       r->uri);
@@ -374,6 +381,7 @@ int authorize_stage2(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
 
     char *exp_respc = conf->pake->shared.respc;
     char *client_respc = resp->hdr.respc;
+
     if (strcmp(exp_respc, client_respc)) {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_pake: user %s: respc mismatch: expected '%s', got '%s'",
@@ -406,7 +414,7 @@ static int add_auth_info(request_rec *r)
         return OK;
     }
 
-    pake_compute_resps(conf->pake, 1234); /* TODO: unhardcode me */
+    pake_compute_resps(conf->pake, resp->sessid); /* TODO: unhardcode me */
     
     if (!conf->pake->shared.resps) {
         /* we failed to allocate a client struct */

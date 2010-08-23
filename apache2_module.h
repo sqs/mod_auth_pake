@@ -61,7 +61,7 @@ void *create_auth_pake_dir_config(apr_pool_t *p, char *dir);
 const char *set_realm(cmd_parms *cmd, void *config, const char *realm);
 
 /* struct to hold the configuration info */
-
+#define MAX_SESSID 512  /* TODO: make sessid size a constant in libtcpcrypt */
 typedef struct auth_pake_config_struct {
     const char  *dir_name;
     authn_provider_list *providers;
@@ -102,7 +102,6 @@ typedef struct hash_entry {
 /* struct to hold a parsed Authorization header */
 
 enum hdr_sts { NO_HEADER, NOT_PAKE_AUTH, INVALID, VALID_STAGE1, VALID_STAGE2 };
-
 typedef struct auth_pake_header_struct {
     struct pake_http_header hdr;
     enum hdr_sts          auth_hdr_sts;
@@ -113,6 +112,7 @@ typedef struct auth_pake_header_struct {
     int                   needed_auth;
     int                   auth_ok;
     client_entry         *client;
+    char sessid[MAX_SESSID];
 } auth_pake_header_rec;
 
 #endif // MOD_AUTH_PAKE_APACHE2_MODULE_H
