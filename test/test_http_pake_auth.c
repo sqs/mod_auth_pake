@@ -5,10 +5,6 @@
 #include <strings.h>
 #include <string.h>
 #include <netdb.h>
-#include <sys/types.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 #include <curl/curl.h>
 #include <openssl/sha.h>
 #include <assert.h>
@@ -17,9 +13,6 @@
 #include <pake/pake.h>
 
 #include "lib/tcpcrypt.h"
-#include "tcpcrypt/tcpcrypt.h"
-#include "tcpcrypt/tcpcrypt_ctl.h"
-
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests
