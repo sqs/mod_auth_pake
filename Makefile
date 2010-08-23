@@ -1,7 +1,7 @@
 export CC=gcc
 export CFLAGS=-Wall -Werror -g
 
-export SRC=apache2_module.c apache2_module_init.c tcpcrypt_session.c http_header.c contrib/curl_http_kv_parser.c
+export SRC=apache2_module.c tcpcrypt_session.c http_header.c contrib/curl_http_kv_parser.c
 export OBJ=$(SRC:.c=.o)
 export INCLUDES=-I. -Icontrib
 export LIBS=-lssl -lpake
