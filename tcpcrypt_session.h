@@ -1,6 +1,0 @@
-#ifndef MOD_AUTH_TCPCRYPT_TCPCRYPT_SESSION_H
-#define MOD_AUTH_TCPCRYPT_TCPCRYPT_SESSION_H
-
-unsigned long tcpcrypt_get_sid(void);
-
-#endif // MOD_AUTH_TCPCRYPT_TCPCRYPT_SESSION_H

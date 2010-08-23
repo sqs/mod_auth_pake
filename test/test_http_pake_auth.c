@@ -13,7 +13,6 @@
 #include <openssl/sha.h>
 #include <assert.h>
 #include "test_http_pake_auth.h"
-#include "tcpcrypt_session.h"
 #include "http_header.h"
 #include "pake.h"
 
@@ -178,14 +177,14 @@ void make_auth_hdr(char *header_line, struct pake_http_header *res_hdr, char *ex
     
     strcpy(req_hdr.X, pake_client_get_X_string(pc));
     
-    pake_compute_respc(pc, tcpcrypt_get_sid());
+    pake_compute_respc(pc, 1234); /* TODO: unhardcode me */
     strcpy(req_hdr.respc, (char *)pc->shared.respc);
 
     assert(pake_http_header_stringify(header_line, &req_hdr, 0)); 
     if (detailed) printf("make auth hdr: '%s'\n", header_line);
 
     /* save expected resps to exp_resps */
-    pake_compute_resps(pc, tcpcrypt_get_sid());
+    pake_compute_resps(pc, 1234); /* TODO: unhardcode me */
     strcpy(exp_resps, (char *)pc->shared.resps);
 }
 

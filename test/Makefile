@@ -1,4 +1,4 @@
-SRC=test_http_pake_auth.c ../http_header.c ../tcpcrypt_session.c ../contrib/curl_http_kv_parser.c
+SRC=test_http_pake_auth.c ../http_header.c ../contrib/curl_http_kv_parser.c
 OBJ=$(SRC:.c=.o)
 OUT=test_http_pake_auth
 INCLUDES=-I. -I.. -I../contrib -I/home/sqs/src/pake/src/

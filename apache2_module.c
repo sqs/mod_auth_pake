@@ -1,6 +1,5 @@
 #include "apache2_module.h"
 #include "crypto.h"
-#include "tcpcrypt_session.h"
 #include <assert.h>
 #include <ctype.h>
 
@@ -88,16 +87,16 @@ int parse_authorization_header(request_rec *r, auth_pake_header_rec *resp)
 static BIGNUM *make_beta(unsigned char *secret) {
     BIGNUM *beta;
     SHA512_CTX sha;
-    long tcpcrypt_sid;
+    long sessid;
     unsigned char md[SHA512_DIGEST_LENGTH];
 
     beta = BN_new();
     assert(beta);
 
-    tcpcrypt_sid = tcpcrypt_get_sid();
+    sessid = 1234; /* TODO: unhardcode me */
 
     assert(SHA512_Init(&sha));
-    assert(SHA512_Update(&sha, &tcpcrypt_sid, sizeof(tcpcrypt_sid)));
+    assert(SHA512_Update(&sha, &sessid, sizeof(sessid)));
     assert(SHA512_Update(&sha, secret, SECRET_LEN));
     assert(SHA512_Final(md, &sha));
 
@@ -366,7 +365,7 @@ int authorize_stage2(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
     pake_server_recv_X(conf->pake, X);
 
     /* compute expected respc */
-    if (!pake_compute_respc(conf->pake, tcpcrypt_get_sid())) {
+    if (!pake_compute_respc(conf->pake, 1234)) { /* TODO: unhardcode me */
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
                       "auth_pake: couldn't compute expected respc: uri=%s",
                       r->uri);
@@ -407,7 +406,7 @@ static int add_auth_info(request_rec *r)
         return OK;
     }
 
-    pake_compute_resps(conf->pake, tcpcrypt_get_sid());
+    pake_compute_resps(conf->pake, 1234); /* TODO: unhardcode me */
     
     if (!conf->pake->shared.resps) {
         /* we failed to allocate a client struct */

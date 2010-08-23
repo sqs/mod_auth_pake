@@ -1,5 +1,5 @@
-#ifndef TEST_HTTP_TCPCRYPT_AUTH_H
-#define TEST_HTTP_TCPCRYPT_AUTH_H
+#ifndef TEST_HTTP_PAKE_AUTH_H
+#define TEST_HTTP_PAKE_AUTH_H
 #include <curl/curl.h>
 
 #define TEST_HOST "localhost"
@@ -40,4 +40,4 @@ struct http_response {
 char *header_val(struct http_response *res, char *header_prefix);
 void do_http_request(struct http_request *req, struct http_response *res);
 
-#endif // TEST_HTTP_TCPCRYPT_AUTH_H
+#endif // TEST_HTTP_PAKE_AUTH_H
