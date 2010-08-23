@@ -14,7 +14,7 @@
 #include <assert.h>
 #include "test_http_pake_auth.h"
 #include "http_header.h"
-#include "pake.h"
+#include <pake/pake.h>
 
 #define MAXDATASIZE 100 // max number of bytes we can get at once
 static int detailed = 0; // level of detail for tests

@@ -1,9 +1,9 @@
 SRC=test_http_pake_auth.c ../http_header.c ../contrib/curl_http_kv_parser.c
 OBJ=$(SRC:.c=.o)
 OUT=test_http_pake_auth
-INCLUDES=-I. -I.. -I../contrib -I/home/sqs/src/pake/src/
+INCLUDES=-I. -I.. -I../contrib
 CFLAGS+=-std=c99
-LIBS+=-lcurl
+LIBS+=-lcurl -lpake
 
 .PHONY: clean test www
 
