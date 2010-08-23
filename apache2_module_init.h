@@ -18,7 +18,7 @@
 #include "mod_auth.h"
 
 #include "apache2_module.h"
-#include "pake.h"
+#include <pake/pake.h>
 
 
 static unsigned char auth_pake_secret[SECRET_LEN];

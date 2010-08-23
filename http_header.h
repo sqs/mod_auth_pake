@@ -3,7 +3,7 @@
 
 #include <openssl/ec.h>
 #include <openssl/sha.h>
-#include "pake.h"
+#include <pake/pake.h>
 
 #define MAX_BN_STRING_LENGTH RESP_LENGTH
 #define MAX_EC_POINT_STRING_LENGTH (MAX_BN_STRING_LENGTH*2 + 3)

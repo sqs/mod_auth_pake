@@ -28,7 +28,7 @@
 #include "mod_auth.h"
 
 #include "http_header.h"
-#include "pake.h"
+#include <pake/pake.h>
 
 
 /* Disable shmem until pools/init gets sorted out

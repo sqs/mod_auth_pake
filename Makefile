@@ -3,8 +3,7 @@ export CFLAGS=-Wall -Werror -g
 
 export SRC=apache2_module.c apache2_module_init.c tcpcrypt_session.c http_header.c contrib/curl_http_kv_parser.c
 export OBJ=$(SRC:.c=.o)
-export INCLUDES=-I. -Icontrib -I/home/sqs/src/pake/src
-export LDFLAGS=-L/home/sqs/src/pake/
+export INCLUDES=-I. -Icontrib
 export LIBS=-lssl -lpake
 
 .PHONY: test clean restart
