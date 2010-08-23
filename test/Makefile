@@ -5,7 +5,7 @@ INCLUDES=-I. -I.. -I../contrib
 CFLAGS+=-std=c99
 LIBS+=-lcurl -lpake
 
-.PHONY: clean test www
+.PHONY: clean test
 
 default: test
 
@@ -22,6 +22,3 @@ $(OUT): $(OBJ)
 
 clean:
 	rm -f $(OBJ) $(OUT)
-
-www:
-	cp -R ../www/* ../www/.well-known /var/www/
