@@ -1,4 +1,4 @@
-#include "pake.h"
+#include <pake/pake.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
