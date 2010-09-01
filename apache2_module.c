@@ -252,7 +252,7 @@ static int authenticate_pake_user(request_rec *r)
     while (mainreq->prev != NULL) {
         mainreq = mainreq->prev;
     } /* TODO: are these 2 while loops necessary? */
-    assert(r == mainreq); /* if this assert fails, then the while loops are necessary */
+    //assert(r == mainreq); /* if this assert fails, then the while loops are necessary */
     resp = (auth_pake_header_rec *) ap_get_module_config(mainreq->request_config,
                                                       &auth_pake_module);
     resp->needed_auth = 1;
