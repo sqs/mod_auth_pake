@@ -59,6 +59,12 @@ int initialize_module(apr_pool_t *p, apr_pool_t *plog,
 void *create_auth_pake_dir_config(apr_pool_t *p, char *dir);
 
 const char *set_realm(cmd_parms *cmd, void *config, const char *realm);
+const char *set_sessionid_provider(cmd_parms *cmd, void *config, const char *provider);
+
+enum sessionid_provider_t {
+    SSL_SESSION_PROVIDER = 1,
+    TCPCRYPT_SESSION_PROVIDER = 2,
+};
 
 /* struct to hold the configuration info */
 #define MAX_SESSID 512  /* TODO: make sessid size a constant in libtcpcrypt */
@@ -67,6 +73,7 @@ typedef struct auth_pake_config_struct {
     authn_provider_list *providers;
     const char  *realm;
     const char *pakefile;
+    enum sessionid_provider_t sessionid_provider;
     int auth_optional;
     BN_CTX      *bn_ctx;
     struct pake_info *pake;
@@ -84,6 +91,8 @@ static const command_rec auth_pake_cmds[] =
                  (void *)APR_OFFSETOF(auth_pake_config_rec, auth_optional),
                  OR_AUTHCFG,
                  "If set, no 401s are returned but auth may still occur"),
+    AP_INIT_TAKE1("SessionIDProvider", set_sessionid_provider, NULL, OR_AUTHCFG,
+                  "source of session ID for connection ('ssl' or 'tcpcrypt')"),
     {NULL}
 };
 

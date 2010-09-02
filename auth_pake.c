@@ -1,7 +1,8 @@
 #include "auth_pake.h"
-#include "crypto.h"
 #include <assert.h>
 #include <ctype.h>
+#include <mod_ssl.h>
+#include <apr_optional.h>
 
 #define APLOG(s...) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, s)
 #define LOG_PAKE 1
@@ -18,12 +19,13 @@ void make_stage2_auth_challenge(request_rec *r,
                                 auth_pake_header_rec *resp);
 static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *conf, const char *username, const char *pi_0_hex, const char *L_hex, int make_dummy);
 
+static APR_OPTIONAL_FN_TYPE(ssl_var_lookup) *opt_ssl_var_lookup = NULL;
+
 /* Get the request-uri (before any subrequests etc are initiated) and
  * initialize the request_config.
  */
 static int make_header_rec(request_rec *r)
 {
-    const char *sessid;
     auth_pake_header_rec *resp;
 
     if (!ap_is_initial_req(r)) {
@@ -38,13 +40,34 @@ static int make_header_rec(request_rec *r)
     resp->method = r->method;
     ap_set_module_config(r->request_config, &auth_pake_module, resp);
 
-    sessid = apr_table_get(r->connection->notes, "TCP_CRYPT_SESSID");
-    if (sessid)
-        strncpy(resp->sessid, sessid, MAX_SESSID);
-
     parse_authorization_header(r, resp);
 
     return DECLINED;
+}
+
+static int get_sessionid(request_rec *r, auth_pake_config_rec *conf, auth_pake_header_rec *resp)
+{
+    const char *sessid = NULL;
+
+    if (conf->sessionid_provider == SSL_SESSION_PROVIDER) {
+        sessid = (*opt_ssl_var_lookup)(r->pool, r->server, r->connection, r, "SSL_SESSION_ID");
+    } else if (conf->sessionid_provider == TCPCRYPT_SESSION_PROVIDER) {
+        sessid = apr_table_get(r->connection->notes, "TCP_CRYPT_SESSID");
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                      "auth_pake: no session ID provider specified");
+        return AUTH_GENERAL_ERROR;
+    }
+     
+    if (sessid && strlen(sessid)) {
+        strncpy(resp->sessid, sessid, MAX_SESSID);
+        APLOG("sessid = %s", sessid);
+        return OK;
+    } else {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
+                      "auth_pake: no session ID, provider %d", conf->sessionid_provider);
+        return AUTH_GENERAL_ERROR;
+    }
 }
 
 /*
@@ -119,6 +142,11 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
     /* TODO: make random auth_pake_secret regenerate */
     resp = (auth_pake_header_rec *) ap_get_module_config(r->request_config,
                                                          &auth_pake_module);
+
+    if (!get_sessionid(r, conf, resp)) {
+        return AUTH_GENERAL_ERROR;
+    }
+
     beta = make_beta(auth_pake_secret, resp->sessid);
     assert(beta);
 
@@ -582,6 +610,27 @@ const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
     }
     
     conf->realm = realm;
+
+    return DECLINE_CMD;
+}
+
+const char *set_sessionid_provider(cmd_parms *cmd, void *config, const char *provider)
+{
+    auth_pake_config_rec *conf = (auth_pake_config_rec *) config;
+    
+    if (provider && strlen(provider)) {
+        if (strncasecmp("ssl", provider, strlen("ssl")) == 0) {
+            conf->sessionid_provider = SSL_SESSION_PROVIDER;
+            if (!opt_ssl_var_lookup)
+                opt_ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
+        } else if (strncasecmp("tcpcrypt", provider, strlen("tcpcrypt")) == 0) {
+            conf->sessionid_provider = TCPCRYPT_SESSION_PROVIDER;
+        }
+    } else {
+            return apr_psprintf(cmd->pool, 
+                                "Invalid SessionIDProvider '%s': must be either ssl or tcpcrypt",
+                                provider);
+    }
 
     return DECLINE_CMD;
 }
