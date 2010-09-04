@@ -62,12 +62,12 @@ static int get_sessionid(request_rec *r, auth_pake_config_rec *conf, auth_pake_h
     if (sessid && strlen(sessid)) {
         strncpy(resp->sessid, sessid, MAX_SESSID);
         APLOG("sessid = %s", sessid);
-        return OK;
     } else {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_pake: no session ID, provider %d", conf->sessionid_provider);
-        return AUTH_GENERAL_ERROR;
+        memset(resp->sessid, '\0', MAX_SESSID);
     }
+    return OK;
 }
 
 /*
@@ -143,7 +143,7 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
     resp = (auth_pake_header_rec *) ap_get_module_config(r->request_config,
                                                          &auth_pake_module);
 
-    if (!get_sessionid(r, conf, resp)) {
+    if (get_sessionid(r, conf, resp) != OK) {
         return AUTH_GENERAL_ERROR;
     }
 
