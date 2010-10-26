@@ -58,9 +58,9 @@ static int get_sessionid(request_rec *r, auth_pake_config_rec *conf, auth_pake_h
     } else if (conf->sessionid_provider == TCPCRYPT_SESSION_PROVIDER) {
         sessid = apr_table_get(r->connection->notes, "TCP_CRYPT_SESSID");
     } else {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
-                      "auth_pake: no session ID provider specified");
-        return AUTH_GENERAL_ERROR;
+        /* no session ID provider */
+        resp->sessid[0] = '\0';
+        return OK;
     }
      
     if (sessid && strlen(sessid)) {
@@ -618,6 +618,8 @@ const char *set_sessionid_provider(cmd_parms *cmd, void *config, const char *pro
                 opt_ssl_var_lookup = APR_RETRIEVE_OPTIONAL_FN(ssl_var_lookup);
         } else if (strncasecmp("tcpcrypt", provider, strlen("tcpcrypt")) == 0) {
             conf->sessionid_provider = TCPCRYPT_SESSION_PROVIDER;
+        } else if (strncasecmp("none", provider, strlen("none")) == 0) {
+            conf->sessionid_provider = NO_SESSION_PROVIDER;
         }
     } else {
             return apr_psprintf(cmd->pool, 

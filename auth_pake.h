@@ -62,6 +62,7 @@ const char *set_realm(cmd_parms *cmd, void *config, const char *realm);
 const char *set_sessionid_provider(cmd_parms *cmd, void *config, const char *provider);
 
 enum sessionid_provider_t {
+    NO_SESSION_PROVIDER = 0,
     SSL_SESSION_PROVIDER = 1,
     TCPCRYPT_SESSION_PROVIDER = 2,
 };
@@ -92,7 +93,7 @@ static const command_rec auth_pake_cmds[] =
                  OR_AUTHCFG,
                  "If set, no 401s are returned but auth may still occur"),
     AP_INIT_TAKE1("SessionIDProvider", set_sessionid_provider, NULL, OR_AUTHCFG,
-                  "source of session ID for connection ('ssl' or 'tcpcrypt')"),
+                  "source of session ID for connection ('ssl', 'tcpcrypt', or 'none')"),
     {NULL}
 };
 
