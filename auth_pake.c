@@ -33,6 +33,10 @@ static int make_header_rec(request_rec *r)
     }
 
     resp = apr_pcalloc(r->pool, sizeof(auth_pake_header_rec));
+    if (!resp) {
+        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, "auth_pake: couldn't pcalloc for header rec");
+        return DECLINED;
+    }
     resp->raw_request_uri = r->unparsed_uri;
     resp->psd_request_uri = &r->parsed_uri;
     resp->needed_auth = 0;
