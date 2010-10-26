@@ -61,7 +61,6 @@ static int get_sessionid(request_rec *r, auth_pake_config_rec *conf, auth_pake_h
      
     if (sessid && strlen(sessid)) {
         strncpy(resp->sessid, sessid, MAX_SESSID);
-        APLOG("sessid = %s", sessid);
     } else {
         ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r, 
                       "auth_pake: no session ID, provider %d", conf->sessionid_provider);
@@ -198,9 +197,6 @@ static authn_status get_user_pake_info(request_rec *r, const char *username,
 static authn_status set_user_pake_info(request_rec *r, auth_pake_config_rec *conf, const char *username, const char *pi_0_hex, const char *L_hex, int make_dummy) {
     BIGNUM *pi_0 = NULL, *order = NULL, *tmp = NULL;
     EC_POINT *L = NULL;
-
-    if (LOG_PAKE) ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                                "--- username = '%s'", username);
 
     pi_0 = BN_new();
     L = EC_POINT_new(conf->pake->public.G);
