@@ -390,14 +390,7 @@ int authorize_stage2(request_rec *r, auth_pake_config_rec *conf, auth_pake_heade
     }
      
     /* recv client X */
-    EC_POINT *X = EC_POINT_new(conf->pake->public.G);
-    if (!EC_POINT_hex2point(conf->pake->public.G, resp->hdr.X, X, conf->bn_ctx)) {
-        ap_log_rerror(APLOG_MARK, APLOG_ERR, 0, r,
-                      "auth_pake: couldn't convert hex X to EC_POINT: X=%s, uri=%s",
-                      resp->hdr.X, r->uri);
-        return HTTP_INTERNAL_SERVER_ERROR;
-    }
-    pake_server_recv_X(conf->pake, X);
+    pake_server_recv_X_string(conf->pake, resp->hdr.X);
 
     /* compute expected respc */
     if (!pake_compute_respc(conf->pake, resp->sessid)) {
