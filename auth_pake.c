@@ -595,9 +595,9 @@ const char *set_realm(cmd_parms *cmd, void *config, const char *realm)
     for (i = 0; i < strlen(realm); ++i) {
         char c = realm[i];
         if (!isalnum(c) && c != ' ' && c != '_' && c != ':' && c != '/' &&
-            c != '.') {
+            c != '.' && c != '-') {
             return apr_psprintf(cmd->pool, 
-                                "Invalid AuthName '%s': must only contain [a-zA-Z0-9 _]",
+                                "Invalid AuthName '%s': must only contain [a-zA-Z0-9:/. _-]",
                                 realm);
         }
     }
